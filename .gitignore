@@ -1,0 +1,32 @@
+panda.db
+panda.db-wal
+panda.db-shm
+dist/
+*.exe
+
+# 交叉编译产物（本机打包用，不入库）
+panda-survey-linux
+panda-survey-linux-arm64
+
+# 打包输出（fpk 源码目录保留，仅忽略构建出的 .fpk）
+*.fpk
+
+# fpk 打包所用的编译二进制（打包时本地重新置入，不入库）
+fpk/app/server/panda-survey
+fpk-arm/app/server/panda-survey
+
+# 本地运行日志与测试库
+server.log
+survey.db
+ps-test.db
+ps-test.db-shm
+ps-test.db-wal
+
+# 编辑器 / 系统备份
+*~
+.DS_Store
+
+# Go 测试 / 临时产物
+*.test
+*.out
+coverage.txt

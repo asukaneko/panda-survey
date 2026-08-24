@@ -1,0 +1,23 @@
+[
+  {
+    "stepTitle": "卸载选项",
+    "items": [
+      {
+        "type": "radio",
+        "field": "wizard_keep_data",
+        "label": "是否保留问卷数据",
+        "initValue": "true",
+        "options": [
+          {
+            "label": "保留数据",
+            "value": "true"
+          },
+          {
+            "label": "删除数据",
+            "value": "false"
+          }
+        ]
+      }
+    ]
+  }
+]

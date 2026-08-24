@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>关于 - 熊猫问卷</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <style>
+    .about-wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px; }
+    .about-card { margin-bottom: 16px; }
+    .about-card h2 { font-size: 18px; margin-bottom: 14px; }
+    .row { display: flex; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .row:last-child { border: none; }
+    .label { width: 90px; flex: none; color: var(--text-2); }
+    .value { flex: 1; word-break: break-all; }
+    .value a { color: var(--primary); }
+    .about-desc { font-size: 14px; color: var(--text-2); line-height: 1.9; }
+    .about-desc ul { margin: 6px 0 0 18px; }
+    .about-desc li { margin: 4px 0; }
+
+    /* 检测更新 */
+    .check-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+    .check-msg { font-size: 13px; color: var(--text-2); }
+    .check-msg.err { color: var(--danger); }
+    .check-msg .new-badge { color: var(--primary); font-weight: 600; }
+
+    /* 更新日志 */
+    .update-status { font-size: 13px; color: var(--text-2); margin-bottom: 12px; }
+    .release-list { list-style: none; }
+    .release-item { padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .release-item:last-child { border: none; }
+    .release-item .rv { font-weight: 600; font-size: 15px; }
+    .release-item .rv.current { color: var(--primary); }
+    .release-item .rv .tag { font-size: 11px; background: var(--primary); color: #fff; padding: 1px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+    .release-item .r-date { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+    .release-item .r-title { margin-top: 4px; font-size: 14px; white-space: pre-line; }
+    .release-item .r-dl { margin-top: 6px; }
+    .release-item .r-dl a { font-size: 13px; }
+
+    /* 反馈表单 */
+    .fb-form .field { margin-bottom: 12px; }
+    .fb-form select.input, .fb-form textarea.input { margin-top: 2px; }
+    .fb-form .check-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); margin: 2px 0 14px; }
+    .fb-form .check-line input { width: 16px; height: 16px; accent-color: var(--primary); flex: none; }
+    .fb-form .fb-result { font-size: 13px; margin-top: 10px; }
+    .fb-form .fb-result.ok { color: var(--primary); }
+    .fb-form .fb-result.err { color: var(--danger); }
+
+    .back-link { display: inline-block; margin-top: 20px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="logo" href="/">
+      <svg width="28" height="28" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="15" fill="#1f2329"/>
+        <circle cx="11" cy="13" r="4" fill="#fff"/>
+        <circle cx="21" cy="13" r="4" fill="#fff"/>
+        <circle cx="11.5" cy="13.5" r="1.8" fill="#1f2329"/>
+        <circle cx="20.5" cy="13.5" r="1.8" fill="#1f2329"/>
+        <ellipse cx="16" cy="21" rx="5" ry="3.4" fill="#fff"/>
+      </svg>
+      熊猫问卷
+    </a>
+    <div class="spacer"></div>
+    <a class="btn btn-sm" href="/">返回首页</a>
+  </header>
+
+  <div class="about-wrap">
+    <div class="card about-card">
+      <h2>关于熊猫问卷</h2>
+      <div class="row">
+        <span class="label">应用名称</span>
+        <span class="value">熊猫问卷（pandasurvey）</span>
+      </div>
+      <div class="row">
+        <span class="label">当前版本</span>
+        <span class="value" id="currentVersion">0.2.0</span>
+      </div>
+      <div class="row">
+        <span class="label">作者</span>
+        <span class="value">PanDa</span>
+      </div>
+      <div class="row">
+        <span class="label">网址</span>
+        <span class="value"><a href="https://www.aykeji.cn" target="_blank" rel="noopener">www.aykeji.cn</a></span>
+      </div>
+      <div class="row">
+        <span class="label">来源与许可</span>
+        <span class="value">本 FPK 由 PanDa（www.aykeji.cn）打包发布。</span>
+      </div>
+    </div>
+
+    <div class="card about-card">
+      <h2>检测更新</h2>
+      <div class="check-row">
+        <button type="button" class="btn btn-primary btn-sm" id="checkBtn">检查更新</button>
+        <span class="check-msg" id="checkMsg"></span>
+      </div>
+    </div>
+
+    <div class="card about-card">
+      <h2>更新日志</h2>
+      <div class="update-status" id="updateStatus">点击上方「检查更新」或访问 www.aykeji.cn 查看</div>
+      <ul class="release-list" id="releaseList"></ul>
+    </div>
+
+    <div class="card about-card">
+      <h2>Bug 反馈</h2>
+      <form class="fb-form" id="fbForm">
+        <div class="field">
+          <label>问题分类</label>
+          <select class="input" id="fbCategory">
+            <option value="安装问题">安装问题</option>
+            <option value="问卷功能">问卷功能</option>
+            <option value="统计导出">统计导出</option>
+            <option value="AI 助手">AI 助手</option>
+            <option value="界面显示">界面显示</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>标题（必填）</label>
+          <input class="input" id="fbTitle" placeholder="一句话描述问题" required>
+        </div>
+        <div class="field">
+          <label>详细描述</label>
+          <textarea class="input" id="fbDesc" placeholder="复现步骤、期望结果与实际结果等"></textarea>
+        </div>
+        <div class="field">
+          <label>联系方式（选填）</label>
+          <input class="input" id="fbContact" placeholder="邮箱或社交账号，便于回复">
+        </div>
+        <div class="field">
+          <label class="check-line"><input type="checkbox" id="fbLogs" checked> 附带诊断信息与运行日志（仅用于排障，不含账号数据）</label>
+        </div>
+        <button type="submit" class="btn btn-primary">提交反馈</button>
+        <div class="fb-result" id="fbResult"></div>
+      </form>
+    </div>
+
+    <a class="back-link" href="/">&larr; 返回首页</a>
+  </div>
+
+  <script type="module">
+    import { initAbout } from '/js/about.js';
+    // 本地版本号（每次发版需同步修改）
+    initAbout('0.2.0');
+  </script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>熊猫问卷 - 简单好用的在线问卷调查系统</title>
+  <link rel="stylesheet" href="/css/base.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="logo" href="/">
+      <svg width="28" height="28" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="15" fill="#1f2329"/>
+        <circle cx="11" cy="13" r="4" fill="#fff"/>
+        <circle cx="21" cy="13" r="4" fill="#fff"/>
+        <circle cx="11.5" cy="13.5" r="1.8" fill="#1f2329"/>
+        <circle cx="20.5" cy="13.5" r="1.8" fill="#1f2329"/>
+        <ellipse cx="16" cy="21" rx="5" ry="3.4" fill="#fff"/>
+      </svg>
+      熊猫问卷<span class="subtitle">简单好用的在线问卷调查系统</span>
+    </a>
+    <div class="spacer"></div>
+    <a class="btn btn-sm" href="/login">登录</a>
+    <a class="btn btn-sm btn-primary" href="/register">免费注册</a>
+  </header>
+
+  <section class="hero">
+    <svg width="88" height="88" viewBox="0 0 32 32">
+      <circle cx="16" cy="16" r="15" fill="#1f2329"/>
+      <circle cx="11" cy="13" r="4" fill="#fff"/>
+      <circle cx="21" cy="13" r="4" fill="#fff"/>
+      <circle cx="11.5" cy="13.5" r="1.8" fill="#1f2329"/>
+      <circle cx="20.5" cy="13.5" r="1.8" fill="#1f2329"/>
+      <ellipse cx="16" cy="21" rx="5" ry="3.4" fill="#fff"/>
+    </svg>
+    <h1>几分钟做好一份问卷</h1>
+    <p>私有部署、数据自持。卡片式问卷设计、链接扫码即填、图表统计一键导出，手机电脑都顺手。</p>
+    <div class="cta">
+      <a class="btn btn-primary btn-lg" href="/register">免费注册</a>
+      <a class="btn btn-lg" href="/login">已有账号，去登录</a>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="card feature-card">
+      <div class="f-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2BA245" stroke-width="2">
+          <path d="M4 4h16v13H8l-4 4z"/>
+        </svg>
+      </div>
+      <h3>可视化问卷设计</h3>
+      <p>六种基础题型，卡片式编辑、必答设置、选项管理、实时预览，所见即所得。</p>
+    </div>
+    <div class="card feature-card">
+      <div class="f-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2BA245" stroke-width="2">
+          <path d="M12 3l1.9 4.1 4.1.6-3 2.9.7 4.1L12 12.7 8.3 14.7l.7-4.1-3-2.9 4.1-.6z"/>
+          <path d="M5 19h14"/>
+        </svg>
+      </div>
+      <h3>AI 创建与编辑</h3>
+      <p>一句话生成整份问卷，或用自然语言指挥 AI 修改题目，改完确认再保存。</p>
+    </div>
+    <div class="card feature-card">
+      <div class="f-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2BA245" stroke-width="2">
+          <path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>
+        </svg>
+      </div>
+      <h3>统计与导出</h3>
+      <p>逐题图表、平均分、开放题列表，明细与汇总 CSV 一键导出，Excel 直接打开。</p>
+    </div>
+    <div class="card feature-card">
+      <div class="f-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2BA245" stroke-width="2">
+          <rect x="7" y="2" width="10" height="20" rx="2"/>
+          <path d="M11 18h2"/>
+        </svg>
+      </div>
+      <h3>双端顺畅填写</h3>
+      <p>手机与电脑同一链接自适应展示，微信内打开即可作答，触控热区友好。</p>
+    </div>
+  </section>
+
+  <footer class="site-foot">熊猫问卷 · 私有部署的轻量问卷调查系统 · <a href="/about">关于</a></footer>
+
+  <script type="module">
+    import { api } from '/js/api.js';
+    // 已登录自动进入工作台
+    api('/api/auth/me').then(() => {
+      location.href = '/console';
+    }).catch(() => {});
+  </script>
+</body>
+</html>

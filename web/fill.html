@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>填写问卷 - 熊猫问卷</title>
+  <link rel="stylesheet" href="/css/base.css">
+</head>
+<body>
+  <div class="fill-wrap" id="app">
+    <div class="fill-hero">
+      <h1 id="sTitle">加载中……</h1>
+      <p id="sDesc"></p>
+    </div>
+    <div class="fill-tipbar" id="tipBar"></div>
+    <div id="questions"></div>
+    <div class="fill-actions" id="actions">
+      <button class="btn btn-primary btn-lg" id="submitBtn">提 交</button>
+    </div>
+  </div>
+  <div class="thanks" id="thanks" style="display:none">
+    <svg width="72" height="72" viewBox="0 0 32 32">
+      <circle cx="16" cy="16" r="15" fill="#1f2329"/>
+      <circle cx="11" cy="13" r="4" fill="#fff"/>
+      <circle cx="21" cy="13" r="4" fill="#fff"/>
+      <circle cx="11.5" cy="13.5" r="1.8" fill="#1f2329"/>
+      <circle cx="20.5" cy="13.5" r="1.8" fill="#1f2329"/>
+      <ellipse cx="16" cy="21" rx="5" ry="3.4" fill="#fff"/>
+    </svg>
+    <h2>提交成功，感谢你的参与</h2>
+    <p id="thanksSub">你的反馈对我们很重要</p>
+  </div>
+  <script type="module" src="/js/fill.js"></script>
+</body>
+</html>

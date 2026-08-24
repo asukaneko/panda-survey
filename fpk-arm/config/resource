@@ -1,0 +1,12 @@
+{
+  "data-share": {
+    "shares": [
+      {
+        "name": "pandasurvey"
+      },
+      {
+        "name": "pandasurvey/data"
+      }
+    ]
+  }
+}

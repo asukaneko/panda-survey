@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>问卷设计 - 熊猫问卷</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <script src="/vendor/qrcode.min.js"></script>
+  <script src="/vendor/chart.umd.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <button class="btn btn-ghost btn-sm menu-btn" id="menuBtn" title="打开问卷列表">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 6h18M3 12h18M3 18h18"/>
+      </svg>
+    </button>
+    <a class="logo" href="/">
+      <svg width="28" height="28" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="15" fill="#1f2329"/>
+        <circle cx="11" cy="13" r="4" fill="#fff"/>
+        <circle cx="21" cy="13" r="4" fill="#fff"/>
+        <circle cx="11.5" cy="13.5" r="1.8" fill="#1f2329"/>
+        <circle cx="20.5" cy="13.5" r="1.8" fill="#1f2329"/>
+        <ellipse cx="16" cy="21" rx="5" ry="3.4" fill="#fff"/>
+      </svg>
+      熊猫问卷<span class="subtitle">简单好用的在线问卷调查系统</span>
+    </a>
+    <div class="spacer"></div>
+    <div class="toolbar top-actions" id="topActions"></div>
+    <div class="user-box">
+      <span id="userName"></span>
+      <a href="/admin" id="adminLink" class="btn btn-ghost btn-sm" style="display:none">管理</a>
+      <button class="btn btn-ghost btn-sm" id="logoutBtn">退出</button>
+    </div>
+  </header>
+
+  <div class="tabs" style="padding:0 16px; margin-top:10px">
+    <button class="tab active" id="tabDesign">问卷设计</button>
+    <button class="tab" id="tabStats">回答统计</button>
+  </div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-title">我的问卷</div>
+      <div id="surveyList"></div>
+      <button class="btn btn-primary side-new" id="newBtn">+ 新建问卷</button>
+      <button class="btn side-new" id="tplBtn" style="margin-top:8px">从模板创建</button>
+    </aside>
+
+    <main class="main" id="mainArea">
+      <div id="emptyHint" class="card" style="text-align:center;color:var(--text-3);padding:60px 20px">
+        左侧选择或新建一份问卷，开始设计
+      </div>
+      <div id="editor" style="display:none">
+        <div class="survey-head">
+          <input class="input-title" id="sTitle" placeholder="问卷标题">
+          <textarea class="input" id="sDesc" rows="2" placeholder="问卷描述（选填）：向填写者说明问卷目的"></textarea>
+        </div>
+        <div id="questionList"></div>
+        <div class="add-question" id="addBar"></div>
+      </div>
+      <div id="statsArea" style="display:none"></div>
+    </main>
+
+    <aside class="ai-panel" id="aiPanel">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h4>AI 助手</h4>
+        <button class="btn btn-ghost btn-sm" id="aiPanelClose">收起</button>
+      </div>
+      <div class="tabs" style="margin-bottom:10px">
+        <button class="tab active" id="aiTabEdit" type="button">编辑问卷</button>
+        <button class="tab" id="aiTabCreate" type="button">创建问卷</button>
+      </div>
+      <div id="aiEditView" style="display:flex;flex-direction:column;gap:10px;flex:1;min-height:0">
+        <div class="ai-log" id="aiLog">
+          <div class="ai-msg">
+            <div class="who">AI 助手</div>
+            <div class="bubble">用自然语言告诉我怎么改这份问卷，例如：把第一题改为多选题并加一个「其他」选项。</div>
+          </div>
+        </div>
+        <div id="aiProposal" style="display:none">
+          <button class="btn btn-primary btn-sm" id="aiApplyBtn" style="width:100%">应用到编辑器（仍需手动保存）</button>
+        </div>
+        <div class="ai-input-row">
+          <textarea class="input" id="aiInput" placeholder="输入修改指令"></textarea>
+          <button class="btn btn-primary" id="aiSendBtn" style="align-self:flex-end">发送</button>
+        </div>
+      </div>
+      <div id="aiCreateView" style="display:none;flex-direction:column;gap:10px;min-height:0;overflow-y:auto">
+        <div class="field" style="margin:0">
+          <label>描述你的需求</label>
+          <textarea class="input" id="aiCreatePrompt" rows="4"
+            placeholder="例如：设计一份员工满意度调查，10 题以内，包含整体满意度评分和开放建议题"></textarea>
+          <div class="hint" id="aiQuotaHint"></div>
+        </div>
+        <button class="btn btn-primary" id="aiGenerateBtn">生成预览</button>
+        <div id="aiPreview"></div>
+        <button class="btn btn-primary" id="aiCreateConfirm" style="display:none">创建为我的问卷</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 发布设置 -->
+  <div class="modal-mask" id="publishModal">
+    <div class="modal">
+      <h3>发布问卷</h3>
+      <div class="field">
+        <label>回收截止时间（选填）</label>
+        <input class="input" type="datetime-local" id="pubDeadline">
+        <div class="hint">到时自动停止回收，时间按服务器时区解释</div>
+      </div>
+      <div class="field">
+        <label>回收量上限（选填）</label>
+        <input class="input" type="number" id="pubMax" min="1" placeholder="不限">
+        <div class="hint">收满指定份数后自动停止回收</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="pubCancel">取消</button>
+        <button class="btn btn-primary" id="pubConfirm">发布</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分享 -->
+  <div class="modal-mask" id="shareModal">
+    <div class="modal">
+      <h3>分享问卷</h3>
+      <div class="share-link-row">
+        <input class="input" id="shareLink" readonly>
+        <button class="btn" id="copyLinkBtn">复制</button>
+      </div>
+      <div class="qr-box" id="qrBox"></div>
+      <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:12px">
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:8px">统计只读分享（同事无需登录即可查看统计图表）</div>
+        <div class="share-link-row" style="display:none" id="shareStatsRow">
+          <input class="input" id="shareStatsLink" readonly>
+          <button class="btn" id="copyStatsLinkBtn">复制</button>
+        </div>
+        <div class="toolbar" style="margin:8px 0 0">
+          <button class="btn btn-sm" id="genStatsShareBtn">生成链接</button>
+          <button class="btn btn-sm btn-danger" id="closeStatsShareBtn" style="display:none">关闭分享</button>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="shareClose">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 从模板创建 -->
+  <div class="modal-mask" id="tplModal">
+    <div class="modal">
+      <h3>从模板创建</h3>
+      <div id="tplList"><p style="color:var(--text-2)">加载中……</p></div>
+      <div class="modal-foot">
+        <button class="btn" id="tplClose">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI 优化单题 -->
+  <div class="modal-mask" id="aiOptModal">
+    <div class="modal">
+      <h3>AI 优化题目</h3>
+      <div id="aiOptBody"></div>
+      <div class="modal-foot">
+        <button class="btn" id="aiOptClose">取消</button>
+        <button class="btn btn-primary" id="aiOptApply" style="display:none">应用修改</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 移动端遮罩 -->
+  <div class="modal-mask" id="drawerMask"></div>
+
+  <script type="module" src="/js/console.js"></script>
+</body>
+</html>
