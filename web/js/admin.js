@@ -23,7 +23,7 @@ Object.keys(views).forEach((tabId) => {
       loadSurveys();
     }
     if (tabId === 'tabAbout') {
-      initAbout('0.2.0'); // 本地版本号（每次发版需同步修改）
+      initAbout('0.2.1'); // 本地版本号（每次发版需同步修改）
     }
   });
 });

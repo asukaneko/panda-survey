@@ -1,8 +1,8 @@
 appname               = pandasurvey
-version               = 0.2.0
+version               = 0.2.1
 display_name          = 熊猫问卷
 desc                  = <b>熊猫问卷</b> 为飞牛私有云 (fnOS) 提供私有部署的轻量在线问卷调查系统，数据自持，手机与电脑同一套页面自适应。<br><br><b>功能：</b><br>- 多用户注册登录，问卷按人管理<br>- 九种题型：单选、多选、填空、评分、排序、矩阵等<br>- 逻辑跳转、问卷分页、模板库、回收控制<br>- 逐题统计图表与 CSV 导出<br>- 集成 OpenAI 兼容 AI 助手：一句话生成问卷、自然语言编辑题目<br><br><b>数据：</b>问卷与答卷数据持久化到应用数据卷（data 共享目录），重装或升级不丢失。<br><br><b>来源与许可：</b>本 FPK 由 Panda（www.aykeji.cn）打包发布。
-changelog             = 【v0.2.0】新增关于页：应用信息、功能简介、更新日志（拉取 www.aykeji.cn 更新接口）。<br>【v0.1.0】首版：问卷创建/编辑/发布/回收、九种题型、逻辑跳转、模板库、统计图表与 CSV 导出、AI 助手。
+changelog             = 【v0.2.1】修复：经反向代理/网关访问时，注册与登录被误判为跨站请求而拒绝（改用浏览器 Sec-Fetch-Site 判定，兼容 fnOS 网关与自定义域名反代）；新增 ALLOWED_ORIGINS / TRUST_PROXY 配置项；补充 CSRF 单元测试与 .gitattributes 强制 LF。<br>【v0.2.0】新增关于页：应用信息、功能简介、更新日志（拉取 www.aykeji.cn 更新接口）。<br>【v0.1.0】首版：问卷创建/编辑/发布/回收、九种题型、逻辑跳转、模板库、统计图表与 CSV 导出、AI 助手。
 platform              = x86
 source                = thirdparty
 maintainer            = PanDa

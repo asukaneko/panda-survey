@@ -15,16 +15,16 @@ import (
 
 // Deps 汇总全部依赖，由 main 装配后传入。
 type Deps struct {
-	Cfg        config.Config
-	SessionTTL time.Duration
-	Auth       *auth.Service
-	Surveys    *store.SurveyStore
-	Responses  *store.ResponseStore
-	Settings   *store.SettingsStore
-	AIUsage    *store.AIUsageStore
-	Admin      *store.AdminStore
-	SurveySvc  *service.SurveyService
-	StatsSvc   *service.StatsService
+	Cfg           config.Config
+	SessionTTL    time.Duration
+	Auth          *auth.Service
+	Surveys       *store.SurveyStore
+	Responses     *store.ResponseStore
+	Settings      *store.SettingsStore
+	AIUsage       *store.AIUsageStore
+	Admin         *store.AdminStore
+	SurveySvc     *service.SurveyService
+	StatsSvc      *service.StatsService
 	Limiter       *middleware.RateLimiter
 	LoginLimit    *middleware.RateLimiter
 	FeedbackLimit *middleware.RateLimiter
@@ -43,7 +43,8 @@ func chain(h http.HandlerFunc, mws ...middlewareFn) http.Handler {
 
 // RegisterRoutes 注册全部 API 路由与页面路由。
 func RegisterRoutes(mux *http.ServeMux, d *Deps, webFS fs.FS) {
-	base := []middlewareFn{middleware.Recover, middleware.Logging, middleware.CSRF}
+	csrf := middleware.CSRF(d.Cfg.AllowedOrigins, d.Cfg.TrustProxy)
+	base := []middlewareFn{middleware.Recover, middleware.Logging, csrf}
 	authed := append(append([]middlewareFn{}, base...), middleware.RequireAuth(d.Auth))
 	admin := append(append([]middlewareFn{}, authed...), middleware.RequireAdmin)
 

@@ -1,0 +1,11 @@
+# 统一以 LF 入库与检出。
+# 本机 core.autocrlf=true 会在检出时把 LF 转成 CRLF，而 fpk/cmd 下的 bash 脚本
+# 一旦带 CRLF，在 fnOS 上执行会报 `$'\r': command not found`，导致应用起不来。
+# 显式声明 eol=lf 覆盖 autocrlf 设置，保证打包产物在 NAS 上可用。
+* text=auto eol=lf
+
+# 二进制资源不做任何换行转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.fpk binary

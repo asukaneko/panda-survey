@@ -45,7 +45,7 @@ func TestCollectServerLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := &Deps{
-		Cfg:       config.Config{Version: "0.2.0", DBPath: filepath.Join(dir, "panda.db"), LogPath: logPath},
+		Cfg:       config.Config{Version: "0.2.1", DBPath: filepath.Join(dir, "panda.db"), LogPath: logPath},
 		StartTime: time.Now().Add(-90 * time.Second),
 	}
 
@@ -54,7 +54,7 @@ func TestCollectServerLogs(t *testing.T) {
 	if strings.Contains(short, "app.log (尾") {
 		t.Fatalf("include=false 不应包含日志尾部")
 	}
-	if !strings.Contains(short, "版本: 0.2.0") {
+	if !strings.Contains(short, "版本: 0.2.1") {
 		t.Fatalf("诊断信息缺少版本")
 	}
 
