@@ -81,7 +81,9 @@ async function boot() {
   }
 }
 
-// 条件显隐：仅依据依赖题（按题序索引）的当前答案推导
+// 条件显隐：仅依据依赖题（按题序索引）的当前答案推导。
+// 注意只更新 visible 标记，不直接改 display——显示统一由 applyDisplay 按「当前页 ∩ 可见」决定，
+// 否则作答触发的 change 会把分页隐藏的题目全部显示出来。
 function recalcVisibility() {
   widgets.forEach((it, idx) => {
     const vi = it.q.config && it.q.config.visible_if;
@@ -99,17 +101,20 @@ function recalcVisibility() {
     }
     it.visible = vis;
   });
-  widgets.forEach((it) => {
-    it.w.root.style.display = it.visible ? '' : 'none';
-  });
+  applyDisplay();
 }
 
-function renderPage() {
-  const pageSet = new Set(pages[curPage] || []);
+// 显示 = 当前页题目 ∩ 条件可见（无分页时等同全部题目 ∩ 条件可见）
+function applyDisplay() {
+  const pageSet = new Set(pages[curPage] || widgets.map((_, i) => i));
   widgets.forEach((it, i) => {
     const inPage = pageSet.has(i);
     it.w.root.style.display = (inPage && it.visible) ? '' : 'none';
   });
+}
+
+function renderPage() {
+  applyDisplay();
   const actions = document.getElementById('actions');
   actions.textContent = '';
   if (pages.length <= 1) {
