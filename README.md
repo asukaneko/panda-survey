@@ -41,6 +41,23 @@ GOOS=darwin  GOARCH=arm64 go build -o dist/panda-survey-mac .
 
 静态资源已通过 go:embed 打进二进制，无需附带 web 目录。
 
+## 打包 fnOS fpk（amd64）
+
+```bash
+# 1. 交叉编译 linux/amd64（无 CGO，纯 Go）
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/panda-survey-linux .
+
+# 2. 打包 fpk（依赖 python3；骨架在 fpk/，arm 用 --skeleton fpk-arm --platform arm）
+python3 scripts/pack_fpk.py \
+  --skeleton fpk --binary dist/panda-survey-linux \
+  --version 0.3.0 --platform x86 --out dist
+# 产物：dist/pandasurvey-0.3.0-x86.fpk
+```
+
+打包前会在 `fpk/manifest` 基础上追加 `checksum = md5(app.tgz)`（与作者发布的
+fpk 格式逐字节一致：gzip 包 ustar tar，app 负载置于 app.tgz，二进制位于
+`server/panda-survey`）。在 fnOS「应用中心 → 手动安装」选择该 fpk 即可。
+
 ## 环境变量
 
 | 变量 | 默认 | 说明 |

@@ -10,6 +10,7 @@ DATA_DIR="${TRIM_DATA_SHARE_PATHS%%:*}"
 export PORT="${TRIM_SERVICE_PORT:-43210}"
 export DB_PATH="$DATA_DIR/panda.db"
 export SESSION_TTL="${SESSION_TTL:-168h}"
+export APP_VERSION="${APP_VERSION:-0.3.0}"
 
 log_msg() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
