@@ -15,7 +15,7 @@ type SurveyService struct {
 	Responses *store.ResponseStore
 }
 
-// ValidateAndSave 校验题目结构后整体保存（仅草稿）。
+// ValidateAndSave 校验题目结构后整体保存（任意状态可编辑，题目按 id 保留）。
 func (s *SurveyService) ValidateAndSave(surveyID, userID int64, title, description string,
 	questions []model.QuestionPayload, expectedUpdatedAt string) error {
 	if len([]rune(title)) == 0 {

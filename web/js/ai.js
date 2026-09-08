@@ -262,7 +262,8 @@ document.getElementById('aiApplyBtn').addEventListener('click', () => {
   document.getElementById('sTitle').value = state.current.title;
   document.getElementById('sDesc').value = state.current.description;
   state.questions = proposal.questions.map((q) => ({
-    type: q.type, title: q.title, required: q.required, config: q.config || {},
+    // 保留原题目 id（新增题为 0），保存时原地更新，历史答卷关联不失效
+    id: q.id || 0, type: q.type, title: q.title, required: q.required, config: q.config || {},
   }));
   hooks.markDirty();
   hooks.renderQuestions();

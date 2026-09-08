@@ -130,7 +130,10 @@ func (st *SurveyStore) Questions(surveyID int64) ([]model.Question, error) {
 	return out, rows.Err()
 }
 
-// Save 整体替换保存（仅草稿可编辑）。expectedUpdatedAt 为乐观锁版本。
+// Save 整体替换保存（任意状态可编辑：草稿 / 发布中 / 已停止）。
+// 题目按 id 原地更新：已存在的题目保留 id（历史答卷的题目关联不失效），
+// id 缺失或为 0 的题目新增，本次未保留的旧题目删除（其答卷随外键级联删除）。
+// expectedUpdatedAt 为乐观锁版本。
 func (st *SurveyStore) Save(surveyID, userID int64, title, description string,
 	questions []model.QuestionPayload, expectedUpdatedAt string) error {
 	tx, err := st.DB.Begin()
@@ -140,11 +143,10 @@ func (st *SurveyStore) Save(surveyID, userID int64, title, description string,
 	defer tx.Rollback()
 
 	var owner int64
-	var status int
 	var updatedAt string
 	err = tx.QueryRow(
-		`SELECT user_id, status, updated_at FROM surveys WHERE id = ? AND deleted_at IS NULL`, surveyID,
-	).Scan(&owner, &status, &updatedAt)
+		`SELECT user_id, updated_at FROM surveys WHERE id = ? AND deleted_at IS NULL`, surveyID,
+	).Scan(&owner, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -154,21 +156,36 @@ func (st *SurveyStore) Save(surveyID, userID int64, title, description string,
 	if owner != userID {
 		return ErrForbidden
 	}
-	if status != 0 {
-		return fmt.Errorf("%w：仅草稿状态可编辑，已发布的问卷请停止后复制为新问卷", ErrState)
-	}
 	if expectedUpdatedAt != "" && expectedUpdatedAt != updatedAt {
 		return ErrConflict
 	}
+
+	// 现有题目 id 集合：用于原地更新与删除
+	existing := map[int64]bool{}
+	rows, err := tx.Query(`SELECT id FROM questions WHERE survey_id = ?`, surveyID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		existing[id] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
 	now := model.NowUTC()
 	if _, err := tx.Exec(
 		`UPDATE surveys SET title = ?, description = ?, updated_at = ? WHERE id = ?`,
 		title, description, now, surveyID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM questions WHERE survey_id = ?`, surveyID); err != nil {
-		return err
-	}
+	kept := map[int64]bool{}
 	for i, p := range questions {
 		cfgJSON, err := jsonMarshalConfig(p.Config)
 		if err != nil {
@@ -178,11 +195,31 @@ func (st *SurveyStore) Save(surveyID, userID int64, title, description string,
 		if p.Required {
 			req = 1
 		}
-		if _, err := tx.Exec(
-			`INSERT INTO questions(survey_id, type, title, required, sort_order, config, created_at)
-			 VALUES (?,?,?,?,?,?,?)`,
-			surveyID, p.Type, p.Title, req, i+1, cfgJSON, now); err != nil {
-			return err
+		if p.ID > 0 && existing[p.ID] {
+			// 已存在的题目：保留 id 原地更新
+			if _, err := tx.Exec(
+				`UPDATE questions SET type = ?, title = ?, required = ?, sort_order = ?, config = ?
+				 WHERE id = ? AND survey_id = ?`,
+				p.Type, p.Title, req, i+1, cfgJSON, p.ID, surveyID); err != nil {
+				return err
+			}
+			kept[p.ID] = true
+		} else {
+			// 新增题目
+			if _, err := tx.Exec(
+				`INSERT INTO questions(survey_id, type, title, required, sort_order, config, created_at)
+				 VALUES (?,?,?,?,?,?,?)`,
+				surveyID, p.Type, p.Title, req, i+1, cfgJSON, now); err != nil {
+				return err
+			}
+		}
+	}
+	// 删除本次未保留的题目（其历史答卷随外键级联删除，属预期行为）
+	for id := range existing {
+		if !kept[id] {
+			if _, err := tx.Exec(`DELETE FROM questions WHERE id = ? AND survey_id = ?`, id, surveyID); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()

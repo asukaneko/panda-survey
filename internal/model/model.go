@@ -67,7 +67,9 @@ type Question struct {
 }
 
 // QuestionPayload 编辑保存时前端提交的题目结构（整体替换语义）。
+// ID > 0 表示保留该题目原地更新（历史答卷的题目关联不失效）；0 或缺失表示新增题目。
 type QuestionPayload struct {
+	ID       int64           `json:"id"`
 	Type     string          `json:"type"`
 	Title    string          `json:"title"`
 	Required bool            `json:"required"`

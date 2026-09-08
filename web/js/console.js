@@ -8,7 +8,7 @@ const state = {
   me: null,
   surveys: [],
   current: null,   // {id,title,description,status,updated_at,...}
-  questions: [],   // [{type,title,required,config}]
+  questions: [],   // [{id,type,title,required,config}]
   dirty: false,
   activeTab: 'design', // design | stats
   ai: { enabled: false, usedToday: 0, quota: 50 },
@@ -33,8 +33,9 @@ function renderTopActions() {
     b.addEventListener('click', fn);
     return b;
   };
+  // 任意状态（草稿 / 发布中 / 已停止）都可直接保存
+  box.appendChild(mk('保存', 'btn-primary', saveSurvey, !state.dirty));
   if (st === 0) {
-    box.appendChild(mk('保存', 'btn-primary', saveSurvey, !state.dirty));
     box.appendChild(mk('发布', '', openPublish));
   } else if (st === 1) {
     box.appendChild(mk('停止', 'btn-danger', stopSurvey));
@@ -132,7 +133,7 @@ async function selectSurvey(id) {
   const data = await api('/api/surveys/' + id);
   state.current = data.survey;
   state.questions = (data.questions || []).map((q) => ({
-    type: q.type, title: q.title, required: q.required, config: q.config || {},
+    id: q.id, type: q.type, title: q.title, required: q.required, config: q.config || {},
   }));
   state.dirty = false;
   renderMain();
@@ -241,7 +242,7 @@ function renderAddBar() {
 /* ---------- 保存 / 状态操作 ---------- */
 
 async function saveSurvey() {
-  if (!state.current || state.current.status !== 0) {
+  if (!state.current) {
     return;
   }
   try {
@@ -407,7 +408,8 @@ async function optimizeQuestionAt(idx) {
       body.appendChild(ul);
     }
     $('aiOptApply').onclick = () => {
-      state.questions[idx] = res.optimized;
+      // 保留原题目 id，保存时原地更新，历史答卷关联不失效
+      state.questions[idx] = { ...res.optimized, id: q.id };
       markDirty();
       renderQuestions();
       $('aiOptModal').classList.remove('open');

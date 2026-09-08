@@ -292,14 +292,58 @@ func TestFullFlow(t *testing.T) {
 	if st != 200 {
 		t.Fatalf("副本发布失败: %v", m)
 	}
+
+	// 发布中状态可直接保存：题目 id 保留，历史答卷关联不失效
+	gst, gm := e.do(admin, "GET", "/api/surveys/"+copyID, nil)
+	if gst != 200 {
+		t.Fatalf("获取副本失败: %v", gm)
+	}
+	copyQs := dataMap(gm)["questions"].([]any)
+	saveQs := make([]map[string]any, 0, len(copyQs))
+	for _, cq := range copyQs {
+		qm := cq.(map[string]any)
+		saveQs = append(saveQs, map[string]any{
+			"id": qm["id"], "type": qm["type"], "title": qm["title"].(string) + "（改）",
+			"required": qm["required"], "config": qm["config"],
+		})
+	}
+	st, m = e.do(admin, "PUT", "/api/surveys/"+copyID, map[string]any{
+		"title": "副本（发布中改）", "description": "", "updated_at": dataMap(m)["updated_at"], "questions": saveQs,
+	})
+	if st != 200 || code(m) != 0 || dataMap(m)["status"].(float64) != 1 {
+		t.Fatalf("发布中保存应成功且保持发布状态: %v", m)
+	}
+	gst, gm = e.do(admin, "GET", "/api/surveys/"+copyID, nil)
+	if gst != 200 {
+		t.Fatalf("获取副本失败: %v", gm)
+	}
+	afterQs := dataMap(gm)["questions"].([]any)
+	if len(afterQs) != len(copyQs) {
+		t.Fatalf("保存后题目数量应不变: %d -> %d", len(copyQs), len(afterQs))
+	}
+	for i := range copyQs {
+		if afterQs[i].(map[string]any)["id"].(float64) != copyQs[i].(map[string]any)["id"].(float64) {
+			t.Fatalf("保存后题目 id 应保持不变: %v -> %v", copyQs[i].(map[string]any)["id"], afterQs[i].(map[string]any)["id"])
+		}
+	}
+
 	st, m = e.do(admin, "POST", "/api/surveys/"+copyID+"/stop", map[string]any{})
 	if st != 200 || dataMap(m)["status"].(float64) != 2 {
 		t.Fatalf("停止失败: %v", m)
 	}
+	stopResp := m // 保留停止后的 updated_at
 	// 再停止应报状态错误
 	st, m = e.do(admin, "POST", "/api/surveys/"+copyID+"/stop", map[string]any{})
 	if st != 400 || code(m) != 1004 {
 		t.Fatalf("重复停止应 1004: %v", m)
+	}
+
+	// 已停止状态同样可直接保存
+	st, m = e.do(admin, "PUT", "/api/surveys/"+copyID, map[string]any{
+		"title": "副本（已停止改）", "description": "", "updated_at": dataMap(stopResp)["updated_at"], "questions": saveQs,
+	})
+	if st != 200 || code(m) != 0 || dataMap(m)["status"].(float64) != 2 {
+		t.Fatalf("已停止保存应成功且保持停止状态: %v", m)
 	}
 
 	// 软删除
