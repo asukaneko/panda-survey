@@ -13,8 +13,9 @@ FPK 结构（与作者发布的 pandasurvey-0.2.0-x86.fpk 逐字节核对）：
     )
 
 用法：
-    python scripts/pack_fpk.py --skeleton fpk --binary dist/panda-survey-linux-amd64 \
-        --version 0.3.0 --platform x86 --out dist
+    打包：python scripts/pack_fpk.py --skeleton fpk --binary dist/panda-survey-linux-amd64 \\
+                --version 0.3.0 --platform x86 --out dist
+    校验：python scripts/pack_fpk.py --verify dist/pandasurvey-0.3.0-x86.fpk
 """
 import argparse
 import gzip
@@ -79,15 +80,60 @@ def build_tar(entries, order) -> bytes:
     return buf.getvalue()
 
 
+def verify_fpk(path: str) -> bool:
+    """校验已生成的 fpk：结构、顺序、checksum、二进制架构。"""
+    ok = True
+    def check(cond, msg):
+        nonlocal ok
+        print(("PASS  " if cond else "FAIL  ") + msg)
+        ok = ok and cond
+
+    inner = gzip.decompress(open(path, "rb").read())
+    tf = tarfile.open(fileobj=io.BytesIO(inner), mode="r")
+    inner_names = [m.name for m in tf.getmembers()]
+    check(inner_names == INNER_ORDER, f"内层 tar 条目与顺序一致（{len(inner_names)} 项）")
+
+    manifest = tf.extractfile("manifest").read()
+    app_tgz = tf.extractfile("app.tgz").read()
+    md5 = hashlib.md5(app_tgz).hexdigest()
+    try:
+        checksum_line = [l for l in manifest.decode("utf-8").splitlines() if l.startswith("checksum")][0]
+    except (IndexError, UnicodeDecodeError):
+        checksum_line = ""
+    check(md5 in checksum_line, f"manifest checksum == md5(app.tgz) = {md5}")
+
+    version = [l for l in manifest.decode("utf-8", "replace").splitlines()
+               if l.startswith("version")][0].split("=", 1)[1].strip()
+    print(f"INFO  manifest version = {version}")
+
+    atf = tarfile.open(fileobj=io.BytesIO(app_tgz), mode="r")
+    app_names = [m.name for m in atf.getmembers()]
+    check(app_names == APP_ORDER, f"app.tgz 条目与顺序一致（{len(app_names)} 项）")
+
+    bin_data = atf.extractfile("server/panda-survey").read()
+    check(bin_data[:4] == b"\x7fELF", "二进制为 ELF")
+    check(bin_data[4] == 2, "ELF 为 64 位")
+    machine = bin_data[18] | (bin_data[19] << 8)
+    check(machine == 0x3E, "machine = 0x3e (x86-64)")
+    print(f"INFO  二进制大小 = {len(bin_data)} bytes, machine = 0x{machine:x}")
+    return ok
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--skeleton", required=True, help="fpk 骨架目录（含 manifest/cmd/config/app/...）")
-    ap.add_argument("--binary", required=True, help="编译好的 linux 二进制路径")
-    ap.add_argument("--version", required=True, help="版本号，如 0.3.0")
-    ap.add_argument("--platform", required=True, choices=["x86", "arm"], help="x86(amd64) 或 arm")
-    ap.add_argument("--out", required=True, help="输出目录")
+    ap.add_argument("--skeleton", help="fpk 骨架目录（含 manifest/cmd/config/app/...）")
+    ap.add_argument("--binary", help="编译好的 linux 二进制路径")
+    ap.add_argument("--version", help="版本号，如 0.3.0")
+    ap.add_argument("--platform", choices=["x86", "arm"], help="x86(amd64) 或 arm")
+    ap.add_argument("--out", help="输出目录")
+    ap.add_argument("--verify", help="只校验已生成的 fpk 文件，不打包")
     args = ap.parse_args()
 
+    if args.verify:
+        sys.exit(0 if verify_fpk(os.path.abspath(args.verify)) else 1)
+
+    if not (args.skeleton and args.binary and args.version and args.platform and args.out):
+        ap.error("打包模式需要 --skeleton/--binary/--version/--platform/--out；或使用 --verify 校验已有 fpk")
     sk = os.path.abspath(args.skeleton)
     binary = os.path.abspath(args.binary)
     if not os.path.isfile(binary):

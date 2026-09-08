@@ -52,11 +52,16 @@ python3 scripts/pack_fpk.py \
   --skeleton fpk --binary dist/panda-survey-linux \
   --version 0.3.0 --platform x86 --out dist
 # 产物：dist/pandasurvey-0.3.0-x86.fpk
+
+# 3. 校验产物（结构/顺序/checksum/ELF 架构）
+python3 scripts/pack_fpk.py --verify dist/pandasurvey-0.3.0-x86.fpk
 ```
 
 打包前会在 `fpk/manifest` 基础上追加 `checksum = md5(app.tgz)`（与作者发布的
 fpk 格式逐字节一致：gzip 包 ustar tar，app 负载置于 app.tgz，二进制位于
 `server/panda-survey`）。在 fnOS「应用中心 → 手动安装」选择该 fpk 即可。
+
+**完整复刻流程、格式细节、发版检查清单与常见问题见 [`fpk/README.md`](fpk/README.md)。**
 
 ## 环境变量
 
