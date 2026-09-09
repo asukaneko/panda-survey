@@ -70,14 +70,18 @@ async function boot() {
   renderPage();
 
   if (isPreview) {
-    const actions = document.getElementById('actions');
-    actions.textContent = '';
+    // 预览提示放到题目区上方，保留 renderPage 生成的分页导航（上一页/下一页）
     const note = document.createElement('p');
-    note.style.color = 'var(--text-3)';
+    note.style.cssText = 'color:var(--text-3);font-size:13px;margin:10px 0';
     note.textContent = '预览模式：此处为填写者看到的最终效果';
-    actions.appendChild(note);
+    box.parentNode.insertBefore(note, box);
   } else {
-    document.getElementById('submitBtn').addEventListener('click', submit);
+    // 分页问卷的提交走导航栏按钮（renderPage 已重建 actions，无 submitBtn）；
+    // 单页问卷的 submitBtn 由 renderPage 创建
+    const sb = document.getElementById('submitBtn');
+    if (sb) {
+      sb.addEventListener('click', submit);
+    }
   }
 }
 
@@ -146,7 +150,7 @@ function renderPage() {
   info.textContent = '第 ' + (curPage + 1) + ' / ' + pages.length + ' 页';
   const next = document.createElement('button');
   next.className = 'btn btn-primary btn-lg';
-  next.textContent = curPage === pages.length - 1 ? '提 交' : '下一页';
+  next.textContent = curPage === pages.length - 1 ? (isPreview ? '结 束' : '提 交') : '下一页';
   next.addEventListener('click', () => {
     if (!validatePage()) {
       return;
@@ -208,6 +212,11 @@ function validatePage() {
 }
 
 async function submit() {
+  // 预览模式只读，禁止真实提交
+  if (isPreview) {
+    toast('预览模式不可提交，请返回设计页', true);
+    return;
+  }
   // 逐页校验（条件隐藏题跳过）
   for (let p = 0; p < pages.length; p++) {
     const saved = curPage;
