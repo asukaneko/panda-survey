@@ -353,17 +353,31 @@ textarea.input { min-height: 80px; resize: vertical; }
 .star-btn:hover { border-color: var(--primary); }
 
 .fill-actions { text-align: center; padding: 12px 0 40px; }
-.fill-actions .btn-primary { min-width: 220px; min-height: 46px; font-size: 16px; }
+.fill-actions > .btn-primary { min-width: 220px; min-height: 46px; font-size: 16px; }
 
-/* 分页导航 */
+/* 分页导航：上一页/下一页等宽，窄屏自动换行，不被挤压 */
 .page-nav {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  gap: 14px;
-  padding: 8px 0 40px;
+  gap: 12px;
+  padding: 8px 12px 40px;
 }
-.page-nav .page-info { color: var(--text-2); font-size: 14px; }
+.page-nav .btn {
+  flex: 1 1 0%;
+  min-width: 0;
+  max-width: 220px;
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 15px;
+  white-space: nowrap;
+}
+.page-nav .page-info {
+  flex: 0 0 auto;
+  color: var(--text-2);
+  font-size: 14px;
+}
 
 /* 矩阵题 */
 .matrix-table { width: 100%; }
@@ -646,6 +660,13 @@ textarea.input { min-height: 80px; resize: vertical; }
     inset: 0;
     width: 100%;
     z-index: 105;
+  }
+  /* 分页导航：手机端页码独占一行置顶，上一页/下一页等宽同行 */
+  .page-nav { gap: 10px; }
+  .page-nav .page-info {
+    flex: 0 0 100%;
+    order: -1;
+    text-align: center;
   }
 }
 
