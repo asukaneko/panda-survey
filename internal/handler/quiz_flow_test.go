@@ -25,7 +25,7 @@ func quizConfig(overrides map[string]any) map[string]any {
 	cfg := map[string]any{
 		"duration_min":    0,
 		"show_answer":     true,
-		"display_mode":    "list",
+		"display_mode":    "paged",
 		"question_order":  "sequential",
 		"collect_profile": true,
 		"profile_fields": []map[string]any{
@@ -190,6 +190,53 @@ func TestQuizFullFlow(t *testing.T) {
 		}
 	}
 
+	// ---- 逐题提交判分（展示答案模式）：每题判分并回传正确答案，不落库 ----
+	gradeQuiz := func(q float64, value any) (int, map[string]any) {
+		return e.do(anon, "POST", "/api/surveys/"+sid+"/grade-question", map[string]any{
+			"question_id": q, "value": value,
+		})
+	}
+	// 第 1 题答对：得 2 分并回传正确答案
+	st, m = gradeQuiz(qid(pubQs, 1), "o1")
+	if st != 200 || code(m) != 0 {
+		t.Fatalf("逐题提交失败: %v", m)
+	}
+	gd := dataMap(m)
+	if gd["correct"] != true || gd["awarded"].(float64) != 2 {
+		t.Fatalf("第 1 题应判对且得 2 分: %v", gd)
+	}
+	if gd["correct_data"] != "o1" {
+		t.Fatalf("应回传正确答案 o1: %v", gd)
+	}
+	// 第 2 题多选缺项 -> 错 0 分
+	st, m = gradeQuiz(qid(pubQs, 2), []string{"o1"})
+	if st != 200 || dataMap(m)["correct"] != false || dataMap(m)["awarded"].(float64) != 0 {
+		t.Fatalf("多选缺项应判错 0 分: %v", m)
+	}
+	// 第 3 题填空忽略大小写与空格 -> 对
+	st, m = gradeQuiz(qid(pubQs, 3), "  BEIJING  ")
+	if st != 200 || dataMap(m)["correct"] != true {
+		t.Fatalf("填空应判对: %v", m)
+	}
+	// 非法选项 -> 400
+	st, m = gradeQuiz(qid(pubQs, 1), "oX")
+	if st != 400 {
+		t.Fatalf("非法选项应 400: %v", m)
+	}
+	// 不属于该卷的题目 -> 400
+	st, m = gradeQuiz(999999, "o1")
+	if st != 400 {
+		t.Fatalf("不属于该卷的题目应 400: %v", m)
+	}
+	// 逐题提交不落库：答卷列表仍为空
+	st, m = e.do(admin, "GET", "/api/surveys/"+sid+"/responses", nil)
+	if st != 200 {
+		t.Fatalf("答卷列表失败: %v", m)
+	}
+	if arr, ok := m["data"].([]any); !ok || len(arr) != 0 {
+		t.Fatalf("逐题提交不应落库: %v", m)
+	}
+
 	// ---- 提交判分 ----
 	submitQuiz := func(answers []map[string]any, profile []map[string]any) (int, map[string]any) {
 		return e.do(anon, "POST", "/api/surveys/"+sid+"/responses", map[string]any{
@@ -255,8 +302,8 @@ func TestQuizFullFlow(t *testing.T) {
 	cfg := quizConfig(map[string]any{"show_ranking": true, "show_answer": false})
 	st, m = e.do(admin, "PUT", "/api/surveys/"+sid, map[string]any{
 		"title": "常识测验", "description": "测一测",
-		"updated_at": curSurvey["updated_at"].(string),
-		"questions":  cur["questions"],
+		"updated_at":  curSurvey["updated_at"].(string),
+		"questions":   cur["questions"],
 		"quiz_config": cfg,
 	})
 	if st != 200 {
@@ -270,6 +317,13 @@ func TestQuizFullFlow(t *testing.T) {
 	}
 	if rd := dataMap(m); rd["results"] != nil {
 		t.Fatalf("show_answer=false 不应返回逐题结果: %v", rd)
+	}
+	// 关闭展示答案后逐题提交应 404
+	st, m = e.do(anon, "POST", "/api/surveys/"+sid+"/grade-question", map[string]any{
+		"question_id": qid(pubQs, 1), "value": "o1",
+	})
+	if st != 404 {
+		t.Fatalf("show_answer=false 逐题提交应 404: %v", m)
 	}
 
 	// 排行榜：得分降序，姓名取个人信息

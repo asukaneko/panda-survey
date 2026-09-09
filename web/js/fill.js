@@ -287,7 +287,11 @@ function bootQuiz(data) {
     left: (cfg.duration_min || 0) * 60,
     timerId: null,
     userAnswers: null,
+    sheetShown: false, // 分页模式答完最后一题后展示题号答题卡
   };
+  widgets.forEach((it) => {
+    it.w.onChange = () => updateQuizSheet();
+  });
   renderQuizIntro();
 }
 
@@ -422,9 +426,23 @@ function renderQuizQuestions() {
 
   const isPaged = quiz.cfg.display_mode === 'paged';
   if (isPaged) {
+    const perQ = isPerQ(); // 「提交后展示答案」= 逐题提交模式（仅分页 + 非预览）
+    // 答完最后一题后展示题号答题卡（已提交/未提交标记，可点击跳转）
+    if (quiz.cur === widgets.length - 1) {
+      quiz.sheetShown = true;
+    }
     const it = widgets[quiz.cur];
     box.appendChild(it.w.root);
     it.w.root.style.display = '';
+    if (it.locked) {
+      it.w.root.classList.add('locked');
+      if (it.feedback) {
+        box.appendChild(renderFeedback(it));
+      }
+    }
+    if (quiz.sheetShown) {
+      box.appendChild(renderQuizSheet());
+    }
     const nav = document.createElement('div');
     nav.className = 'page-nav';
     const prev = document.createElement('button');
@@ -439,11 +457,24 @@ function renderQuizQuestions() {
     const info = document.createElement('span');
     info.className = 'page-info';
     info.textContent = '第 ' + (quiz.cur + 1) + ' / ' + widgets.length + ' 题';
+    const last = quiz.cur === widgets.length - 1;
     const next = document.createElement('button');
     next.className = 'btn btn-primary btn-lg';
-    next.textContent = quiz.cur === widgets.length - 1 ? (isPreview ? '结 束' : '交 卷') : '下一题';
+    if (perQ) {
+      // 逐题提交：必须先「提交本题」才能进入下一题
+      next.textContent = '下一题';
+      next.disabled = last || !it.locked;
+    } else {
+      next.textContent = last ? (isPreview ? '结 束' : '交 卷') : '下一题';
+    }
     next.addEventListener('click', () => {
-      if (quiz.cur === widgets.length - 1) {
+      if (perQ) {
+        if (!last && it.locked) {
+          quiz.cur++;
+          renderQuizQuestions();
+          window.scrollTo({ top: 0 });
+        }
+      } else if (last) {
         submitQuiz(false);
       } else {
         quiz.cur++;
@@ -453,6 +484,35 @@ function renderQuizQuestions() {
     });
     nav.append(prev, info, next);
     actions.appendChild(nav);
+    // 「提交本题 / 查看成绩」：放在上一题/下一题按钮下方独立一行
+    const subRow = document.createElement('div');
+    subRow.className = 'quiz-submit-row';
+    if (perQ && !it.locked) {
+      // 逐题提交按钮：提交本题 -> 立即判分展示答案 -> 锁定不可修改
+      const submitQ = document.createElement('button');
+      submitQ.className = 'btn btn-primary btn-lg submit-quiz-btn';
+      submitQ.textContent = '提交本题';
+      submitQ.addEventListener('click', () => submitCurrent());
+      subRow.appendChild(submitQ);
+    }
+    if (perQ && last) {
+      if (allLocked()) {
+        const finish = document.createElement('button');
+        finish.className = 'btn btn-primary btn-lg submit-quiz-btn';
+        finish.id = 'submitBtn';
+        finish.textContent = '查看成绩';
+        finish.addEventListener('click', () => submitQuiz(false));
+        subRow.appendChild(finish);
+      } else {
+        const hint = document.createElement('div');
+        hint.className = 'quiz-sheet-label';
+        hint.textContent = '还有 ' + widgets.filter((w) => !w.locked).length + ' 题未提交，可点击上方题号跳转补答';
+        subRow.appendChild(hint);
+      }
+    }
+    if (subRow.hasChildNodes()) {
+      actions.appendChild(subRow);
+    }
     return;
   }
   widgets.forEach((it) => box.appendChild(it.w.root));
@@ -464,6 +524,187 @@ function renderQuizQuestions() {
     btn.addEventListener('click', () => submitQuiz(false));
     actions.appendChild(btn);
   }
+}
+
+// 逐题提交模式（展示答案）：仅分页展示 + 非预览
+function isPerQ() {
+  return !isPreview && !!quiz && !!quiz.cfg && !!quiz.cfg.show_answer;
+}
+
+function allLocked() {
+  return widgets.every((it) => it.locked);
+}
+
+// 答题卡标记语义：逐题提交模式按「已提交（锁定）」，普通模式按「已作答」
+function sheetDone(it) {
+  return isPerQ() ? !!it.locked : !!it.w.collect();
+}
+
+function sheetLabelText() {
+  const done = isPerQ() ? '已提交' : '已答';
+  return '答题卡：' + done + ' ' + widgets.filter(sheetDone).length + ' / ' + widgets.length + ' 题，点击题号可跳转';
+}
+
+// 分页模式答题卡（题号提单）：已提交/已答标记，点击题号跳转到对应题目
+function renderQuizSheet() {
+  const perQ = isPerQ();
+  const sheet = document.createElement('div');
+  sheet.className = 'quiz-sheet';
+  const label = document.createElement('div');
+  label.className = 'quiz-sheet-label';
+  label.textContent = sheetLabelText();
+  sheet.appendChild(label);
+  const nums = document.createElement('div');
+  nums.className = 'quiz-sheet-nums';
+  widgets.forEach((it, i) => {
+    const done = sheetDone(it);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'quiz-sheet-num' + (done ? ' done' : '') + (i === quiz.cur ? ' cur' : '');
+    b.textContent = i + 1;
+    b.title = '第 ' + (i + 1) + ' 题' + (done ? (perQ ? '（已提交）' : '（已答）') : (perQ ? '（未提交）' : '（未答）'));
+    b.addEventListener('click', () => {
+      quiz.cur = i;
+      renderQuizQuestions();
+      window.scrollTo({ top: 0 });
+    });
+    nums.appendChild(b);
+  });
+  sheet.appendChild(nums);
+  return sheet;
+}
+
+// 作答变化时仅刷新答题卡标记，不重建页面（避免打断输入）
+function updateQuizSheet() {
+  const sheet = document.querySelector('#questions .quiz-sheet');
+  if (!sheet) {
+    return;
+  }
+  const perQ = isPerQ();
+  const nums = sheet.querySelectorAll('.quiz-sheet-num');
+  widgets.forEach((it, i) => {
+    const b = nums[i];
+    if (b) {
+      const done = sheetDone(it);
+      b.classList.toggle('done', done);
+      b.title = '第 ' + (i + 1) + ' 题' + (done ? (perQ ? '（已提交）' : '（已答）') : (perQ ? '（未提交）' : '（未答）'));
+    }
+  });
+  const label = sheet.querySelector('.quiz-sheet-label');
+  if (label) {
+    label.textContent = sheetLabelText();
+  }
+}
+
+// 逐题提交：提交本题 -> 服务端判分 -> 展示正确答案与本题得分 -> 锁定不可修改
+async function submitCurrent() {
+  if (isPreview) {
+    toast('预览模式不可提交，请返回设计页', true);
+    return;
+  }
+  const it = widgets[quiz.cur];
+  if (it.locked) {
+    return;
+  }
+  const got = it.w.collect();
+  if (!got) {
+    toast('请先作答再提交本题', true);
+    return;
+  }
+  // 先锁定，防止提交期间修改
+  it.locked = true;
+  it.w.root.classList.add('locked');
+  it.w.root.querySelectorAll('input, select, textarea, button').forEach((el) => {
+    el.disabled = true;
+  });
+  it.feedback = { correct: false, awarded: 0, correct_data: null, mine: displayAnswer(it.q, got.value) };
+  const btn = document.querySelector('#actions button.submit-quiz-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '提交中……';
+  }
+  try {
+    const res = await api('/api/surveys/' + surveyID + '/grade-question', {
+      method: 'POST',
+      body: { question_id: it.q.id, value: got.value },
+    });
+    it.feedback = {
+      correct: !!res.correct,
+      awarded: res.awarded || 0,
+      correct_data: res.correct_data,
+      mine: it.feedback.mine,
+    };
+    renderQuizQuestions();
+    const fb = document.querySelector('#questions .review-card');
+    if (fb) {
+      fb.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  } catch (e) {
+    it.locked = false;
+    it.feedback = null;
+    it.w.root.classList.remove('locked');
+    it.w.root.querySelectorAll('input, select, textarea, button').forEach((el) => {
+      el.disabled = false;
+    });
+    renderQuizQuestions();
+    toast(e.message, true);
+  }
+}
+
+// 单题反馈卡：✓/✗ + 你的答案 + 正确答案 + 本题得分
+function renderFeedback(it) {
+  const f = it.feedback;
+  const card = document.createElement('div');
+  card.className = 'fill-card review-card ' + (f.correct ? 'review-ok' : 'review-bad');
+  const head = document.createElement('div');
+  head.className = 'f-title';
+  const mark = document.createElement('span');
+  mark.className = 'review-mark';
+  mark.textContent = f.correct ? '✓' : '✗';
+  head.appendChild(mark);
+  head.appendChild(document.createTextNode('本题答案'));
+  card.appendChild(head);
+  const row1 = document.createElement('div');
+  row1.className = 'review-line';
+  row1.appendChild(document.createTextNode('你的答案：'));
+  const v1 = document.createElement('b');
+  v1.textContent = f.mine || '未作答';
+  row1.appendChild(v1);
+  card.appendChild(row1);
+  const row2 = document.createElement('div');
+  row2.className = 'review-line';
+  row2.appendChild(document.createTextNode('正确答案：'));
+  const v2 = document.createElement('b');
+  v2.textContent = displayAnswer(it.q, f.correct_data);
+  row2.appendChild(v2);
+  card.appendChild(row2);
+  const row3 = document.createElement('div');
+  row3.className = 'review-line';
+  row3.appendChild(document.createTextNode('本题得分：'));
+  const v3 = document.createElement('b');
+  v3.textContent = f.awarded + ' 分';
+  row3.appendChild(v3);
+  card.appendChild(row3);
+  return card;
+}
+
+// 锁定全部作答控件：交卷后不可再修改
+function lockQuiz() {
+  widgets.forEach((it) => {
+    it.w.root.querySelectorAll('input, select, textarea, button').forEach((el) => {
+      el.disabled = true;
+    });
+    it.w.root.classList.add('locked');
+  });
+}
+
+function unlockQuiz() {
+  widgets.forEach((it) => {
+    it.w.root.querySelectorAll('input, select, textarea, button').forEach((el) => {
+      el.disabled = false;
+    });
+    it.w.root.classList.remove('locked');
+  });
 }
 
 function collectQuizAnswers() {
@@ -485,7 +726,9 @@ async function submitQuiz(auto) {
     toast('预览模式不可提交，请返回设计页', true);
     return;
   }
-  const btn = document.querySelector('#actions button.btn-primary');
+  lockQuiz();
+  const btn = document.getElementById('submitBtn') || document.querySelector('#actions button.btn-primary');
+  const origText = btn ? btn.textContent : '';
   if (btn) {
     btn.disabled = true;
     btn.textContent = '交卷中……';
@@ -506,9 +749,10 @@ async function submitQuiz(auto) {
     }
     showQuizResult(res);
   } catch (e) {
+    unlockQuiz();
     if (btn) {
       btn.disabled = false;
-      btn.textContent = '交 卷';
+      btn.textContent = origText;
     }
     toast(e.message, true);
     if (e.code === 1004) {
@@ -674,7 +918,10 @@ function showQuizResult(res) {
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
-      lb.appendChild(table);
+      const wrap = document.createElement('div');
+      wrap.className = 'table-wrap';
+      wrap.appendChild(table);
+      lb.appendChild(wrap);
     }).catch((e) => {
       lb.textContent = e.message;
     });

@@ -155,7 +155,7 @@ JSON 结构如下：
 {
   "title": "答题标题（20 字内）",
   "description": "卷首说明（80 字内）",
-  "quiz_config": {"duration_min": 10, "show_answer": true, "display_mode": "list", "question_order": "sequential", "collect_profile": false, "profile_fields": [], "show_ranking": false},
+  "quiz_config": {"duration_min": 10, "show_answer": true, "display_mode": "paged", "question_order": "sequential", "collect_profile": false, "profile_fields": [], "show_ranking": false},
   "questions": [
     {"type": "single_choice", "title": "题干", "required": false,
      "config": {"options": [{"id": "o1", "label": "选项文本"}, {"id": "o2", "label": "选项文本"}], "score": 5, "correct": "o1"}},
@@ -167,7 +167,7 @@ JSON 结构如下：
      "config": {"max_len": 100, "score": 5, "correct": ["可接受答案1", "可接受答案2"]}}
   ]
 }
-规则：type 只能取 single_choice / multiple_choice / dropdown / text 四种；每题必须带分值 score（1 到 1000）与正确答案 correct（单选/下拉为选项 id 字符串，多选为选项 id 数组，填空为可接受文本数组，数组元素 1 到 10 个）；选项 id 可省略（后端自动生成，correct 须与选项一一对应）；选项 2 到 26 个；题目 3 到 30 道；quiz_config 字段均可省略（后端补默认），duration_min 为倒计时分钟（0 不限时），display_mode 取 list 或 paged，question_order 取 sequential 或 random；题干简明、无歧义、不引导答案，正确答案客观唯一。`
+规则：type 只能取 single_choice / multiple_choice / dropdown / text 四种；每题必须带分值 score（1 到 1000）与正确答案 correct（单选/下拉为选项 id 字符串，多选为选项 id 数组，填空为可接受文本数组，数组元素 1 到 10 个）；选项 id 可省略（后端自动生成，correct 须与选项一一对应）；选项 2 到 26 个；题目 3 到 30 道；quiz_config 字段均可省略（后端补默认），duration_min 为倒计时分钟（0 不限时），display_mode 取 list 或 paged，question_order 取 sequential 或 random，show_answer（提交后展示答案）仅在 display_mode 为 paged 时有效，list 模式下不要设置；题干简明、无歧义、不引导答案，正确答案客观唯一。`
 
 // GenerateQuiz 需求描述生成整份答题卷草稿（不落库）。结构非法时带错误重试最多 2 次。
 func GenerateQuiz(ctx context.Context, c *Client, prompt string) (*model.GeneratedQuiz, error) {

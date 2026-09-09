@@ -17,7 +17,7 @@ func TestIsCorrect(t *testing.T) {
 	}{
 		{
 			name: "单选正确",
-			q: model.Question{Type: "single_choice", Config: model.QuestionConfig{Correct: "o2"}},
+			q:    model.Question{Type: "single_choice", Config: model.QuestionConfig{Correct: "o2"}},
 			norm: "o2", want: true,
 		},
 		{
@@ -94,5 +94,33 @@ func TestValidateQuizQuestion(t *testing.T) {
 	err = ValidateQuizQuestion("text", "题目", &model.QuestionConfig{Score: 1, Correct: []any{}})
 	if err == nil {
 		t.Fatal("空正确答案应被拒")
+	}
+}
+
+// TestValidateQuizConfigShowAnswerMode 展示答案仅分页模式可用：列表模式强制关闭
+func TestValidateQuizConfigShowAnswerMode(t *testing.T) {
+	// 列表模式：show_answer 被强制关闭
+	qc := &model.QuizConfig{DisplayMode: "list", ShowAnswer: true}
+	if err := ValidateQuizConfig(qc); err != nil {
+		t.Fatalf("合法配置应通过: %v", err)
+	}
+	if qc.ShowAnswer {
+		t.Fatal("列表模式下 show_answer 应被强制关闭")
+	}
+	// 分页模式：show_answer 保留
+	qc = &model.QuizConfig{DisplayMode: "paged", ShowAnswer: true}
+	if err := ValidateQuizConfig(qc); err != nil {
+		t.Fatalf("合法配置应通过: %v", err)
+	}
+	if !qc.ShowAnswer {
+		t.Fatal("分页模式下 show_answer 应保留")
+	}
+	// 缺省展示方式按 list 处理，show_answer 同样关闭
+	qc = &model.QuizConfig{ShowAnswer: true}
+	if err := ValidateQuizConfig(qc); err != nil {
+		t.Fatalf("合法配置应通过: %v", err)
+	}
+	if qc.DisplayMode != "list" || qc.ShowAnswer {
+		t.Fatalf("缺省应归一化为 list 且关闭 show_answer: %+v", qc)
 	}
 }

@@ -42,6 +42,10 @@ func ValidateQuizConfig(qc *model.QuizConfig) error {
 	default:
 		return fmt.Errorf("展示方式无效（list / paged）")
 	}
+	// 提交后展示答案仅分页展示（一题一页）下有意义，列表模式强制关闭
+	if qc.DisplayMode == "list" {
+		qc.ShowAnswer = false
+	}
 	switch qc.QuestionOrder {
 	case "":
 		qc.QuestionOrder = "sequential"
@@ -301,6 +305,56 @@ func questionScore(q model.Question) int {
 		return q.Config.Score
 	}
 	return 1
+}
+
+// GradeQuestion 逐题提交判分（「提交后展示答案」分页模式）：
+// 只校验本题答案并返回对错/本题得分/正确答案，不落库；
+// 整卷成绩仍由最终交卷（SubmitQuiz）统一判分保存，两者逻辑一致。
+func (s *SurveyService) GradeQuestion(survey *model.Survey, questionID int64, value json.RawMessage) (*model.QuizGrade, error) {
+	if survey.Kind != model.KindQuiz {
+		return nil, fmt.Errorf("该问卷不是答题卷")
+	}
+	if !survey.QuizConfig.ShowAnswer || survey.QuizConfig.DisplayMode != "paged" {
+		return nil, fmt.Errorf("该答题未开启逐题提交")
+	}
+	questions, err := s.Surveys.Questions(survey.ID)
+	if err != nil {
+		return nil, err
+	}
+	var q model.Question
+	found := false
+	for _, item := range questions {
+		if item.ID == questionID {
+			q = item
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("题目 %d 不属于该答题卷", questionID)
+	}
+	a, err := registry.Get(q.Type)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.ValidateAnswer(value, false, q.Config); err != nil {
+		return nil, fmt.Errorf("第 %d 题：%w", q.SortOrder, err)
+	}
+	norm, err := a.NormalizeAnswer(value, q.Config)
+	if err != nil {
+		return nil, err
+	}
+	correct := isCorrect(q, norm)
+	awarded := 0
+	if correct {
+		awarded = questionScore(q)
+	}
+	return &model.QuizGrade{
+		QuestionID:  q.ID,
+		Correct:     correct,
+		Awarded:     awarded,
+		CorrectData: q.Config.Correct,
+	}, nil
 }
 
 // isCorrect 比对归一化答案与正确答案。

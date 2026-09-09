@@ -106,6 +106,52 @@ func (d *Deps) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	ok(w, map[string]int64{"response_id": rid})
 }
 
+// handleGradeQuestion 逐题提交判分（「提交后展示答案」分页模式）：
+// 公开端点，仅发布中的答题卷 + 开启 show_answer + 分页展示时可用；
+// 只返回本题对错/本题得分/正确答案，不落库，整卷成绩由最终交卷统一保存。
+func (d *Deps) handleGradeQuestion(w http.ResponseWriter, r *http.Request) {
+	id, okID := d.surveyID(w, r)
+	if !okID {
+		return
+	}
+	s, err := d.Surveys.Get(id)
+	if err != nil {
+		mapErr(w, err)
+		return
+	}
+	if s.Kind != model.KindQuiz || !s.QuizConfig.ShowAnswer || s.QuizConfig.DisplayMode != "paged" {
+		fail(w, http.StatusNotFound, 1008, "该答题未开启逐题提交")
+		return
+	}
+	if s.Status != 1 {
+		fail(w, http.StatusNotFound, 1008, "答题已结束")
+		return
+	}
+	ip := middleware.ClientIP(r)
+	if !d.Limiter.Allow(ip) {
+		fail(w, http.StatusTooManyRequests, 1005, "提交过于频繁，请稍后再试")
+		return
+	}
+	var req struct {
+		QuestionID int64           `json:"question_id"`
+		Value      json.RawMessage `json:"value"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	grade, err := d.SurveySvc.GradeQuestion(s, req.QuestionID, req.Value)
+	if err != nil {
+		mapErr(w, err)
+		return
+	}
+	ok(w, map[string]any{
+		"question_id":  grade.QuestionID,
+		"correct":      grade.Correct,
+		"awarded":      grade.Awarded,
+		"correct_data": grade.CorrectData,
+	})
+}
+
 // handleLeaderboard 答题卷排行榜（公开）：仅发布中的答题卷且开启 show_ranking 时可见。
 func (d *Deps) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	id, okID := d.surveyID(w, r)

@@ -73,6 +73,7 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, webFS fs.FS) {
 	// 填答与统计
 	mux.Handle("GET /api/surveys/{id}/public", chain(d.handlePublicView, base...))
 	mux.Handle("POST /api/surveys/{id}/responses", chain(d.handleSubmit, base...))
+	mux.Handle("POST /api/surveys/{id}/grade-question", chain(d.handleGradeQuestion, base...))
 	mux.Handle("GET /api/surveys/{id}/leaderboard", chain(d.handleLeaderboard, base...))
 	mux.Handle("GET /api/surveys/{id}/stats", chain(d.handleStats, authed...))
 	mux.Handle("GET /api/surveys/{id}/responses", chain(d.handleListResponses, authed...))

@@ -370,8 +370,17 @@ function renderQuizSettings() {
   const modeGroup = elDiv('');
   modeGroup.style.cssText = 'display:flex;gap:10px;align-items:center';
   modeGroup.appendChild(document.createTextNode('展示方式'));
-  modeGroup.appendChild(mkRadio('quizMode', 'list', c.display_mode === 'list', '列表展示', (v) => { c.display_mode = v; }));
-  modeGroup.appendChild(mkRadio('quizMode', 'paged', c.display_mode === 'paged', '分页展示（一题一页）', (v) => { c.display_mode = v; }));
+  modeGroup.appendChild(mkRadio('quizMode', 'list', c.display_mode === 'list', '列表展示', (v) => {
+    c.display_mode = v;
+    c.show_answer = false; // 展示答案仅分页模式可用
+    markDirty();
+    renderQuizSettings();
+  }));
+  modeGroup.appendChild(mkRadio('quizMode', 'paged', c.display_mode === 'paged', '分页展示（一题一页）', (v) => {
+    c.display_mode = v;
+    markDirty();
+    renderQuizSettings();
+  }));
   meta.appendChild(modeGroup);
 
   const orderGroup = elDiv('');
@@ -381,12 +390,13 @@ function renderQuizSettings() {
   orderGroup.appendChild(mkRadio('quizOrder', 'random', c.question_order === 'random', '随机', (v) => { c.question_order = v; }));
   meta.appendChild(orderGroup);
 
-  const mkCheck = (checked, text, onSet) => {
+  const mkCheck = (checked, text, onSet, disabled) => {
     const lab = document.createElement('label');
-    lab.style.cssText = 'display:flex;align-items:center;gap:4px';
+    lab.style.cssText = 'display:flex;align-items:center;gap:4px' + (disabled ? ';opacity:.5;cursor:not-allowed' : '');
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = !!checked;
+    input.disabled = !!disabled;
     input.addEventListener('change', () => {
       onSet(input.checked);
       markDirty();
@@ -395,7 +405,12 @@ function renderQuizSettings() {
     lab.appendChild(document.createTextNode(text));
     return lab;
   };
-  meta.appendChild(mkCheck(c.show_answer, '提交后展示答案', (v) => { c.show_answer = v; }));
+  // 展示答案仅分页模式（一题一页）下可用，列表模式下强制关闭并置灰
+  const pagedOnly = c.display_mode === 'paged';
+  if (!pagedOnly) {
+    c.show_answer = false;
+  }
+  meta.appendChild(mkCheck(pagedOnly && c.show_answer, '提交后展示答案', (v) => { c.show_answer = v; }, !pagedOnly));
   meta.appendChild(mkCheck(c.show_ranking, '答题后可查看排行', (v) => { c.show_ranking = v; }));
   meta.appendChild(mkCheck(c.collect_profile, '答题前填写个人信息', (v) => {
     c.collect_profile = v;
@@ -406,6 +421,12 @@ function renderQuizSettings() {
     renderQuizSettings();
   }));
   card.appendChild(meta);
+
+  const showHint = document.createElement('div');
+  showHint.className = 'quiz-hint';
+  showHint.style.cssText = 'font-size:12px;color:var(--text-3);margin:6px 0 0';
+  showHint.textContent = '「提交后展示答案」仅分页展示（一题一页）下可用：勾选后每题作答完点「提交本题」立即判分并展示正确答案与本题得分，该题随即锁定不可再修改；全部提交后点「查看成绩」查看总分与排行榜；倒计时结束自动交卷。';
+  card.appendChild(showHint);
 
   // 个人信息字段编辑
   if (c.collect_profile) {
