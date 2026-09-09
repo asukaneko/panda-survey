@@ -16,19 +16,28 @@ var (
 	ErrState     = errors.New("问卷当前状态不允许该操作")
 )
 
-const surveyCols = `id, user_id, title, description, status, deadline, max_responses, created_at, updated_at`
+const surveyCols = `id, user_id, title, description, status, kind, quiz_config, deadline, max_responses, created_at, updated_at`
 
 type SurveyStore struct{ DB *sql.DB }
 
 func scanSurvey(row interface{ Scan(...any) error }) (*model.Survey, error) {
 	var s model.Survey
 	var deadline, maxResp sql.NullString
-	err := row.Scan(&s.ID, &s.UserID, &s.Title, &s.Description, &s.Status, &deadline, &maxResp, &s.CreatedAt, &s.UpdatedAt)
+	var quizCfg string
+	err := row.Scan(&s.ID, &s.UserID, &s.Title, &s.Description, &s.Status, &s.Kind, &quizCfg, &deadline, &maxResp, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
+	}
+	if s.Kind != model.KindQuiz {
+		s.Kind = model.KindSurvey
+	}
+	if s.Kind == model.KindQuiz {
+		if err := jsonUnmarshalConfig(quizCfg, &s.QuizConfig); err != nil {
+			return nil, fmt.Errorf("quiz_config 损坏: %w", err)
+		}
 	}
 	if deadline.Valid {
 		s.Deadline = deadline.String
@@ -41,12 +50,15 @@ func scanSurvey(row interface{ Scan(...any) error }) (*model.Survey, error) {
 	return &s, nil
 }
 
-// Create 新建空白草稿问卷。
-func (st *SurveyStore) Create(userID int64, title, description string) (*model.Survey, error) {
+// Create 新建空白草稿问卷（kind：0 问卷 1 答题）。
+func (st *SurveyStore) Create(userID int64, title, description string, kind int) (*model.Survey, error) {
+	if kind != model.KindQuiz {
+		kind = model.KindSurvey
+	}
 	now := model.NowUTC()
 	res, err := st.DB.Exec(
-		`INSERT INTO surveys(user_id, title, description, status, created_at, updated_at) VALUES (?,?,?,0,?,?)`,
-		userID, title, description, now, now)
+		`INSERT INTO surveys(user_id, title, description, status, kind, quiz_config, created_at, updated_at) VALUES (?,?,?,0,?,?,?,?)`,
+		userID, title, description, kind, "{}", now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +86,7 @@ func (st *SurveyStore) GetOwned(id, userID int64) (*model.Survey, error) {
 // List 我的问卷列表（含回收量），按更新时间倒序。
 func (st *SurveyStore) List(userID int64) ([]model.Survey, error) {
 	rows, err := st.DB.Query(`
-		SELECT s.id, s.user_id, s.title, s.description, s.status, s.deadline, s.max_responses,
+		SELECT s.id, s.user_id, s.title, s.description, s.status, s.kind, s.quiz_config, s.deadline, s.max_responses,
 		       s.created_at, s.updated_at,
 		       (SELECT COUNT(*) FROM responses r WHERE r.survey_id = s.id) AS rc
 		FROM surveys s
@@ -88,9 +100,18 @@ func (st *SurveyStore) List(userID int64) ([]model.Survey, error) {
 	for rows.Next() {
 		var s model.Survey
 		var deadline, maxResp sql.NullString
-		if err := rows.Scan(&s.ID, &s.UserID, &s.Title, &s.Description, &s.Status, &deadline, &maxResp,
+		var quizCfg string
+		if err := rows.Scan(&s.ID, &s.UserID, &s.Title, &s.Description, &s.Status, &s.Kind, &quizCfg, &deadline, &maxResp,
 			&s.CreatedAt, &s.UpdatedAt, &s.ResponseCount); err != nil {
 			return nil, err
+		}
+		if s.Kind != model.KindQuiz {
+			s.Kind = model.KindSurvey
+		}
+		if s.Kind == model.KindQuiz {
+			if err := jsonUnmarshalConfig(quizCfg, &s.QuizConfig); err != nil {
+				return nil, fmt.Errorf("quiz_config 损坏: %w", err)
+			}
 		}
 		if deadline.Valid {
 			s.Deadline = deadline.String
@@ -133,9 +154,9 @@ func (st *SurveyStore) Questions(surveyID int64) ([]model.Question, error) {
 // Save 整体替换保存（任意状态可编辑：草稿 / 发布中 / 已停止）。
 // 题目按 id 原地更新：已存在的题目保留 id（历史答卷的题目关联不失效），
 // id 缺失或为 0 的题目新增，本次未保留的旧题目删除（其答卷随外键级联删除）。
-// expectedUpdatedAt 为乐观锁版本。
+// expectedUpdatedAt 为乐观锁版本；quizCfg 为答题卷配置（普通问卷传 nil）。
 func (st *SurveyStore) Save(surveyID, userID int64, title, description string,
-	questions []model.QuestionPayload, expectedUpdatedAt string) error {
+	questions []model.QuestionPayload, quizCfg *model.QuizConfig, expectedUpdatedAt string) error {
 	tx, err := st.DB.Begin()
 	if err != nil {
 		return err
@@ -180,9 +201,17 @@ func (st *SurveyStore) Save(surveyID, userID int64, title, description string,
 	}
 
 	now := model.NowUTC()
+	quizJSON := "{}"
+	if quizCfg != nil {
+		b, err := jsonMarshalConfig(quizCfg)
+		if err != nil {
+			return err
+		}
+		quizJSON = b
+	}
 	if _, err := tx.Exec(
-		`UPDATE surveys SET title = ?, description = ?, updated_at = ? WHERE id = ?`,
-		title, description, now, surveyID); err != nil {
+		`UPDATE surveys SET title = ?, description = ?, quiz_config = ?, updated_at = ? WHERE id = ?`,
+		title, description, quizJSON, now, surveyID); err != nil {
 		return err
 	}
 	kept := map[int64]bool{}
@@ -293,7 +322,7 @@ func (st *SurveyStore) SoftDelete(surveyID, userID int64) error {
 	return nil
 }
 
-// Copy 复制为新草稿（含题目）。
+// Copy 复制为新草稿（含题目与答题配置）。
 func (st *SurveyStore) Copy(surveyID, userID int64) (*model.Survey, error) {
 	src, err := st.GetOwned(surveyID, userID)
 	if err != nil {
@@ -305,9 +334,15 @@ func (st *SurveyStore) Copy(surveyID, userID int64) (*model.Survey, error) {
 	}
 	now := model.NowUTC()
 	title := src.Title + "（副本）"
+	quizJSON := "{}"
+	if src.Kind == model.KindQuiz {
+		if b, err := jsonMarshalConfig(src.QuizConfig); err == nil {
+			quizJSON = b
+		}
+	}
 	res, err := st.DB.Exec(
-		`INSERT INTO surveys(user_id, title, description, status, created_at, updated_at) VALUES (?,?,?,0,?,?)`,
-		userID, title, src.Description, now, now)
+		`INSERT INTO surveys(user_id, title, description, status, kind, quiz_config, created_at, updated_at) VALUES (?,?,?,0,?,?,?,?)`,
+		userID, title, src.Description, src.Kind, quizJSON, now, now)
 	if err != nil {
 		return nil, err
 	}

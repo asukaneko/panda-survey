@@ -54,6 +54,7 @@ func main() {
 		Settings:   &store.SettingsStore{DB: database},
 		AIUsage:    &store.AIUsageStore{DB: database},
 		Admin:      &store.AdminStore{DB: database},
+		Banks:      &store.BankStore{DB: database},
 		SurveySvc:  &service.SurveyService{Surveys: &store.SurveyStore{DB: database}, Responses: &store.ResponseStore{DB: database}},
 		StatsSvc:   &service.StatsService{Surveys: &store.SurveyStore{DB: database}, Responses: &store.ResponseStore{DB: database}},
 		Limiter:        middleware.NewRateLimiter(10),

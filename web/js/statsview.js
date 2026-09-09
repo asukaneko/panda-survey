@@ -57,6 +57,9 @@ export async function renderStatsView(container, opts) {
     };
     overview.appendChild(tile(data.total, '已回收答卷'));
     overview.appendChild(tile(questions.length, '题目数量'));
+    if (data.avg_score !== undefined) {
+      overview.appendChild(tile(data.avg_score, '平均得分'));
+    }
     container.appendChild(overview);
 
     // 工具条：导出 + 明细开关（只读分享不提供）
@@ -92,7 +95,7 @@ export async function renderStatsView(container, opts) {
         const show = detailCard.style.display === 'none';
         detailCard.style.display = show ? '' : 'none';
       });
-      await loadResponses(opts.sid, table, build);
+      await loadResponses(opts.sid, table, build, data.survey.kind === 1);
     }
 
     // 逐题统计
@@ -240,7 +243,7 @@ function addBarChart(card, id, labels, values, height) {
   });
 }
 
-async function loadResponses(sid, table, refresh) {
+async function loadResponses(sid, table, refresh, isQuiz) {
   let list;
   try {
     list = await api('/api/surveys/' + sid + '/responses');
@@ -258,7 +261,13 @@ async function loadResponses(sid, table, refresh) {
   }
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
-  ['提交时间', '耗时(秒)', '答案摘要', '操作'].forEach((h) => {
+  const cols = ['提交时间', '耗时(秒)'];
+  if (isQuiz) {
+    cols.push('得分');
+    cols.push('个人信息');
+  }
+  cols.push('答案摘要', '操作');
+  cols.forEach((h) => {
     const th = document.createElement('th');
     th.textContent = h;
     headRow.appendChild(th);
@@ -272,6 +281,15 @@ async function loadResponses(sid, table, refresh) {
     tdTime.textContent = fmtTime(r.created_at);
     const tdDur = document.createElement('td');
     tdDur.textContent = r.duration;
+    tr.append(tdTime, tdDur);
+    if (isQuiz) {
+      const tdScore = document.createElement('td');
+      tdScore.textContent = r.score !== undefined ? r.score : '-';
+      tr.appendChild(tdScore);
+      const tdProfile = document.createElement('td');
+      tdProfile.textContent = profileSummary(r.profile);
+      tr.appendChild(tdProfile);
+    }
     const tdAns = document.createElement('td');
     tdAns.textContent = Object.values(r.answers).map((v) => String(v).slice(0, 40)).join('；') || '-';
     const tdOp = document.createElement('td');
@@ -291,8 +309,24 @@ async function loadResponses(sid, table, refresh) {
       }
     });
     tdOp.appendChild(del);
-    tr.append(tdTime, tdDur, tdAns, tdOp);
+    tr.append(tdAns, tdOp);
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
+}
+
+// 个人信息 JSON（[{label,value}]）转可读文本
+function profileSummary(json) {
+  if (!json) {
+    return '-';
+  }
+  try {
+    const arr = JSON.parse(json);
+    if (!Array.isArray(arr) || arr.length === 0) {
+      return '-';
+    }
+    return arr.map((p) => p.label + '：' + p.value).join('；');
+  } catch (e) {
+    return json;
+  }
 }

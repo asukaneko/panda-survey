@@ -670,3 +670,141 @@ textarea.input { min-height: 80px; resize: vertical; }
   }
 }
 
+/* ============ 答题卷 ============ */
+
+.quiz-tag {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #f0e9ff;
+  color: #6b3fd1;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.score-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 7px;
+  border-radius: 4px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: 2px;
+}
+
+/* 倒计时条 */
+.timer-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin-bottom: 12px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  color: var(--text-2);
+  text-align: center;
+}
+.timer-bar b {
+  font-size: 16px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.timer-bar.urgent {
+  border-color: var(--danger);
+  background: #fdf3f3;
+}
+.timer-bar.urgent b { color: var(--danger); }
+
+/* 答题说明卡 */
+.quiz-intro-card h3 { margin: 0 0 12px; }
+.quiz-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 6px 0 4px;
+}
+.quiz-intro-card .stat-tile {
+  flex: 1 1 90px;
+  text-align: center;
+}
+.quiz-hint { color: var(--text-2); font-size: 13px; margin: 8px 0; }
+.quiz-profile-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+.quiz-profile-field span { flex: 0 0 auto; min-width: 84px; }
+.quiz-profile-field .input { flex: 1; }
+.quiz-intro-card .btn-lg { margin-top: 14px; width: 100%; }
+
+/* 成绩卡 */
+.quiz-score-card {
+  text-align: center;
+  padding: 32px 20px;
+}
+.quiz-score-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+}
+.quiz-score-num {
+  font-size: 56px;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1;
+}
+.quiz-score-denom { font-size: 18px; color: var(--text-2); }
+
+.quiz-review-title { margin: 22px 0 10px; }
+
+.review-card .f-title { display: flex; align-items: center; gap: 8px; }
+.review-mark {
+  font-weight: 800;
+  font-size: 16px;
+}
+.review-ok { border-left: 3px solid var(--ok, #2BA245); }
+.review-ok .review-mark { color: var(--ok, #2BA245); }
+.review-bad { border-left: 3px solid var(--danger); }
+.review-bad .review-mark { color: var(--danger); }
+.review-line { font-size: 13px; color: var(--text-2); margin: 4px 0; }
+.review-line b { color: var(--text); font-weight: 600; }
+
+/* 排行榜 */
+.lb-self { background: var(--primary-light); font-weight: 600; }
+
+/* 答题设置卡（编辑端） */
+.quiz-settings-card {
+  margin-bottom: 14px;
+  padding: 14px 18px;
+}
+.quiz-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.quiz-settings-head h4 { margin: 0; }
+
+/* 题库选题弹窗行 */
+.bank-q-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 13px;
+  border-bottom: 1px dashed var(--border);
+  cursor: pointer;
+}
+.bank-q-row:last-child { border-bottom: none; }
+.bank-q-row input { margin-top: 2px; }
+
+

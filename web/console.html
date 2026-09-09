@@ -45,7 +45,9 @@
       <div class="side-title">我的问卷</div>
       <div id="surveyList"></div>
       <button class="btn btn-primary side-new" id="newBtn">+ 新建问卷</button>
+      <button class="btn btn-primary side-new" id="newQuizBtn" style="margin-top:8px">+ 新建答题</button>
       <button class="btn side-new" id="tplBtn" style="margin-top:8px">从模板创建</button>
+      <button class="btn side-new" id="banksBtn" style="margin-top:8px">题库管理</button>
     </aside>
 
     <main class="main" id="mainArea">
@@ -57,6 +59,7 @@
           <input class="input-title" id="sTitle" placeholder="问卷标题">
           <textarea class="input" id="sDesc" rows="2" placeholder="问卷描述（选填）：向填写者说明问卷目的"></textarea>
         </div>
+        <div id="quizSettings" style="display:none"></div>
         <div id="questionList"></div>
         <div class="add-question" id="addBar"></div>
       </div>
@@ -71,6 +74,7 @@
       <div class="tabs" style="margin-bottom:10px">
         <button class="tab active" id="aiTabEdit" type="button">编辑问卷</button>
         <button class="tab" id="aiTabCreate" type="button">创建问卷</button>
+        <button class="tab" id="aiTabQuiz" type="button">创建答题</button>
       </div>
       <div id="aiEditView" style="display:flex;flex-direction:column;gap:10px;flex:1;min-height:0">
         <div class="ai-log" id="aiLog">
@@ -97,6 +101,17 @@
         <button class="btn btn-primary" id="aiGenerateBtn">生成预览</button>
         <div id="aiPreview"></div>
         <button class="btn btn-primary" id="aiCreateConfirm" style="display:none">创建为我的问卷</button>
+      </div>
+      <div id="aiCreateQuizView" style="display:none;flex-direction:column;gap:10px;min-height:0;overflow-y:auto">
+        <div class="field" style="margin:0">
+          <label>描述你的需求</label>
+          <textarea class="input" id="aiQuizPrompt" rows="4"
+            placeholder="例如：生成一套含 10 题的 Java 基础测验，单选多选填空混合、每题 5 分、限时 10 分钟"></textarea>
+          <div class="hint" id="aiQuizQuotaHint"></div>
+        </div>
+        <button class="btn btn-primary" id="aiQuizGenerateBtn">生成预览</button>
+        <div id="aiQuizPreview"></div>
+        <button class="btn btn-primary" id="aiQuizCreateConfirm" style="display:none">创建为我的答题</button>
       </div>
     </aside>
   </div>
@@ -144,6 +159,31 @@
       </div>
       <div class="modal-foot">
         <button class="btn" id="shareClose">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 从题库选题（答题卷） -->
+  <div class="modal-mask" id="bankModal">
+    <div class="modal" style="max-width:560px;max-height:80vh;overflow-y:auto">
+      <h3>从题库选题</h3>
+      <div class="field">
+        <label>选择题库</label>
+        <select class="input" id="bankSelect"></select>
+      </div>
+      <div id="bankQuestionList" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:10px">
+        <p style="color:var(--text-2);font-size:13px">加载中……</p>
+      </div>
+      <div class="field">
+        <label>题目排列方式</label>
+        <div style="display:flex;gap:16px;font-size:14px">
+          <label style="display:flex;align-items:center;gap:4px"><input type="radio" name="bankOrder" value="sequential" checked>按题库顺序</label>
+          <label style="display:flex;align-items:center;gap:4px"><input type="radio" name="bankOrder" value="random">随机排列（每位答题者顺序不同）</label>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="bankCancel">取消</button>
+        <button class="btn btn-primary" id="bankImport">导入所选题目</button>
       </div>
     </div>
   </div>

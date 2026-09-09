@@ -16,8 +16,9 @@ type SurveyService struct {
 }
 
 // ValidateAndSave 校验题目结构后整体保存（任意状态可编辑，题目按 id 保留）。
+// quiz 非空表示答题卷：额外校验答题配置与题目正确答案。
 func (s *SurveyService) ValidateAndSave(surveyID, userID int64, title, description string,
-	questions []model.QuestionPayload, expectedUpdatedAt string) error {
+	questions []model.QuestionPayload, quiz *model.QuizConfig, expectedUpdatedAt string) error {
 	if len([]rune(title)) == 0 {
 		return fmt.Errorf("问卷标题不能为空")
 	}
@@ -33,7 +34,8 @@ func (s *SurveyService) ValidateAndSave(surveyID, userID int64, title, descripti
 	if len(questions) > 100 {
 		return fmt.Errorf("题目数量最多 100 道")
 	}
-	for i, q := range questions {
+	for i := range questions {
+		q := &questions[i]
 		if err := registry.ValidateTitle(q.Title); err != nil {
 			return fmt.Errorf("第 %d 题：%w", i+1, err)
 		}
@@ -43,6 +45,17 @@ func (s *SurveyService) ValidateAndSave(surveyID, userID int64, title, descripti
 		}
 		if err := a.ParseConfig(q.Config); err != nil {
 			return fmt.Errorf("第 %d 题（%s）：%w", i+1, a.Label(), err)
+		}
+		if quiz != nil {
+			if !QuizTypes[q.Type] {
+				return fmt.Errorf("第 %d 题：答题仅支持单选题、多选题、下拉题、填空题", i+1)
+			}
+			cfg := q.Config
+			if err := ValidateQuizQuestion(q.Type, q.Title, &cfg); err != nil {
+				return fmt.Errorf("第 %d 题：%w", i+1, err)
+			}
+			// 分值缺省归一化后写回，保证判分与总分一致
+			q.Config.Score = cfg.Score
 		}
 		// 逻辑跳转：只允许依赖前面的单选/下拉题，且选项须存在
 		if vi := q.Config.VisibleIf; vi != nil {
@@ -63,7 +76,12 @@ func (s *SurveyService) ValidateAndSave(surveyID, userID int64, title, descripti
 			}
 		}
 	}
-	return s.Surveys.Save(surveyID, userID, title, description, questions, expectedUpdatedAt)
+	if quiz != nil {
+		if err := ValidateQuizConfig(quiz); err != nil {
+			return err
+		}
+	}
+	return s.Surveys.Save(surveyID, userID, title, description, questions, quiz, expectedUpdatedAt)
 }
 
 func optionIn(opts []model.Option, id string) bool {
@@ -168,5 +186,5 @@ func (s *SurveyService) SubmitResponse(survey *model.Survey, inputs []model.Answ
 			return 0, fmt.Errorf("第 %d 题：此题为必答", q.SortOrder)
 		}
 	}
-	return s.Responses.Create(survey, answerRows, ip, ua, duration)
+	return s.Responses.Create(survey, answerRows, "", 0, ip, ua, duration)
 }

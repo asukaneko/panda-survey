@@ -106,6 +106,15 @@ def verify_fpk(path: str) -> bool:
                if l.startswith("version")][0].split("=", 1)[1].strip()
     print(f"INFO  manifest version = {version}")
 
+    # 按 manifest 的 platform 字段校验二进制架构（x86=0x3E, arm=0xB7）
+    platform = "x86"
+    for line in manifest.decode("utf-8", "replace").splitlines():
+        if line.startswith("platform"):
+            platform = line.split("=", 1)[1].strip()
+            break
+    expected_machine = 0x3E if platform == "x86" else 0xB7
+    machine_name = "x86-64" if expected_machine == 0x3E else "AArch64"
+
     atf = tarfile.open(fileobj=io.BytesIO(app_tgz), mode="r")
     app_names = [m.name for m in atf.getmembers()]
     check(app_names == APP_ORDER, f"app.tgz 条目与顺序一致（{len(app_names)} 项）")
@@ -114,7 +123,7 @@ def verify_fpk(path: str) -> bool:
     check(bin_data[:4] == b"\x7fELF", "二进制为 ELF")
     check(bin_data[4] == 2, "ELF 为 64 位")
     machine = bin_data[18] | (bin_data[19] << 8)
-    check(machine == 0x3E, "machine = 0x3e (x86-64)")
+    check(machine == expected_machine, f"machine = 0x{expected_machine:x} ({machine_name})")
     print(f"INFO  二进制大小 = {len(bin_data)} bytes, machine = 0x{machine:x}")
     return ok
 

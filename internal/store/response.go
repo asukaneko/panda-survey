@@ -14,9 +14,10 @@ type ResponseStore struct{ DB *sql.DB }
 var ErrSurveyClosed = errors.New("问卷已停止回收")
 
 // Create 校验问卷可提交并在事务内写入答卷与答案；
-// 事务内复查回收量上限，避免并发超出。
+// 事务内复查回收量上限，避免并发超出。profileJSON 为个人信息 JSON（答题卷），
+// score 为判分得分（答题卷，普通问卷恒为 0）。
 func (st *ResponseStore) Create(survey *model.Survey, answers []model.AnswerRow,
-	ip, ua string, duration int64) (int64, error) {
+	profileJSON string, score int64, ip, ua string, duration int64) (int64, error) {
 	tx, err := st.DB.Begin()
 	if err != nil {
 		return 0, err
@@ -58,8 +59,8 @@ func (st *ResponseStore) Create(survey *model.Survey, answers []model.AnswerRow,
 
 	now := model.NowUTC()
 	res, err := tx.Exec(
-		`INSERT INTO responses(survey_id, ip, user_agent, duration, created_at) VALUES (?,?,?,?,?)`,
-		survey.ID, ip, ua, duration, now)
+		`INSERT INTO responses(survey_id, ip, user_agent, duration, profile, score, created_at) VALUES (?,?,?,?,?,?,?)`,
+		survey.ID, ip, ua, duration, profileJSON, score, now)
 	if err != nil {
 		return 0, err
 	}
@@ -94,7 +95,7 @@ func (st *ResponseStore) Delete(surveyID, responseID int64) error {
 
 func (st *ResponseStore) List(surveyID int64) ([]model.ResponseRow, error) {
 	rows, err := st.DB.Query(
-		`SELECT id, survey_id, ip, duration, created_at FROM responses WHERE survey_id = ? ORDER BY id DESC`,
+		`SELECT id, survey_id, ip, duration, profile, score, created_at FROM responses WHERE survey_id = ? ORDER BY id DESC`,
 		surveyID)
 	if err != nil {
 		return nil, err
@@ -103,7 +104,31 @@ func (st *ResponseStore) List(surveyID int64) ([]model.ResponseRow, error) {
 	var out []model.ResponseRow
 	for rows.Next() {
 		var r model.ResponseRow
-		if err := rows.Scan(&r.ID, &r.SurveyID, &r.IP, &r.Duration, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.SurveyID, &r.IP, &r.Duration, &r.Profile, &r.Score, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// Leaderboard 答题卷排行榜：得分降序、耗时升序、提交时间升序，取前 limit 名。
+func (st *ResponseStore) Leaderboard(surveyID int64, limit int) ([]model.ResponseRow, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := st.DB.Query(`
+		SELECT id, survey_id, ip, duration, profile, score, created_at
+		FROM responses WHERE survey_id = ?
+		ORDER BY score DESC, duration ASC, id ASC LIMIT ?`, surveyID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.ResponseRow
+	for rows.Next() {
+		var r model.ResponseRow
+		if err := rows.Scan(&r.ID, &r.SurveyID, &r.IP, &r.Duration, &r.Profile, &r.Score, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"panda-survey/internal/middleware"
 	"panda-survey/internal/model"
@@ -11,6 +14,7 @@ import (
 )
 
 // handlePublicView 填答端问卷视图：仅发布中可见，只回题目不回统计。
+// 答题卷额外回 quiz_config，并剥离题目正确答案（不泄露给填写端）。
 func (d *Deps) handlePublicView(w http.ResponseWriter, r *http.Request) {
 	id, okID := d.surveyID(w, r)
 	if !okID {
@@ -37,18 +41,27 @@ func (d *Deps) handlePublicView(w http.ResponseWriter, r *http.Request) {
 	if len(qs) == 0 {
 		fail(w, http.StatusNotFound, 1008, "问卷暂无题目")
 	}
+	isQuiz := s.Kind == model.KindQuiz
+	for i := range qs {
+		qs[i].Config.Correct = nil // 正确答案不出网
+	}
+	if isQuiz && s.QuizConfig.QuestionOrder == "random" {
+		rand.Shuffle(len(qs), func(i, j int) { qs[i], qs[j] = qs[j], qs[i] })
+	}
 	ok(w, map[string]any{
-		"survey":    map[string]any{"id": s.ID, "title": s.Title, "description": s.Description},
+		"survey":    map[string]any{"id": s.ID, "title": s.Title, "description": s.Description, "kind": s.Kind, "quiz_config": s.QuizConfig},
 		"questions": qs,
 	})
 }
 
 type submitReq struct {
-	Answers  []model.AnswerInput `json:"answers"`
-	Duration int64               `json:"duration"`
+	Answers  []model.AnswerInput  `json:"answers"`
+	Profile  []model.ProfileValue `json:"profile"` // 答题卷个人信息
+	Duration int64                `json:"duration"`
 }
 
 // handleSubmit 匿名提交答卷：限频 + 逐题校验 + 事务落库。
+// 答题卷（kind=1）服务端判分并返回成绩；show_answer 时附答案与逐题对错。
 func (d *Deps) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	id, okID := d.surveyID(w, r)
 	if !okID {
@@ -74,6 +87,16 @@ func (d *Deps) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	if req.Duration < 0 {
 		req.Duration = 0
 	}
+	if s.Kind == model.KindQuiz {
+		rid, result, err := d.SurveySvc.SubmitQuiz(s, req.Answers, req.Profile, ip,
+			r.UserAgent(), req.Duration)
+		if err != nil {
+			mapErr(w, err)
+			return
+		}
+		ok(w, map[string]any{"response_id": rid, "score": result.Score, "total": result.Total, "results": result.Results})
+		return
+	}
 	rid, err := d.SurveySvc.SubmitResponse(s, req.Answers, ip,
 		r.UserAgent(), req.Duration)
 	if err != nil {
@@ -81,6 +104,66 @@ func (d *Deps) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok(w, map[string]int64{"response_id": rid})
+}
+
+// handleLeaderboard 答题卷排行榜（公开）：仅发布中的答题卷且开启 show_ranking 时可见。
+func (d *Deps) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
+	id, okID := d.surveyID(w, r)
+	if !okID {
+		return
+	}
+	s, err := d.Surveys.Get(id)
+	if err != nil {
+		mapErr(w, err)
+		return
+	}
+	if s.Kind != model.KindQuiz || !s.QuizConfig.ShowRanking {
+		fail(w, http.StatusNotFound, 1008, "该答题未开放排行榜")
+		return
+	}
+	if s.Status != 1 {
+		fail(w, http.StatusNotFound, 1008, "答题已结束")
+		return
+	}
+	rows, err := d.Responses.Leaderboard(id, 50)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, 1, err.Error())
+		return
+	}
+	out := make([]model.LeaderboardEntry, 0, len(rows))
+	for i, row := range rows {
+		out = append(out, model.LeaderboardEntry{
+			Rank:       i + 1,
+			ResponseID: row.ID,
+			Name:       leaderboardName(row.Profile),
+			Score:      row.Score,
+			Duration:   row.Duration,
+			CreatedAt:  row.CreatedAt,
+		})
+	}
+	ok(w, map[string]any{"entries": out})
+}
+
+// leaderboardName 从个人信息 JSON 提取展示名（第一个有值字段），无则匿名。
+func leaderboardName(profileJSON string) string {
+	if profileJSON == "" {
+		return "匿名"
+	}
+	var vals []model.ProfileValue
+	if json.Unmarshal([]byte(profileJSON), &vals) != nil {
+		return "匿名"
+	}
+	for _, v := range vals {
+		v.Value = strings.TrimSpace(v.Value)
+		if v.Value != "" {
+			r := []rune(v.Value)
+			if len(r) > 20 {
+				return string(r[:20])
+			}
+			return v.Value
+		}
+	}
+	return "匿名"
 }
 
 // handleStats 逐题统计（仅本人）。
@@ -102,7 +185,13 @@ func (d *Deps) handleStats(w http.ResponseWriter, r *http.Request) {
 	if stats == nil {
 		stats = []model.QuestionStats{}
 	}
-	ok(w, map[string]any{"survey": s, "total": total, "questions": stats})
+	data := map[string]any{"survey": s, "total": total, "questions": stats}
+	if s.Kind == model.KindQuiz {
+		if avg, err := d.StatsSvc.AvgScore(s.ID); err == nil {
+			data["avg_score"] = avg
+		}
+	}
+	ok(w, data)
 }
 
 // handleExportCSV 明细/汇总导出，UTF-8 带 BOM。
@@ -171,6 +260,7 @@ func (d *Deps) handleListResponses(w http.ResponseWriter, r *http.Request) {
 		item := map[string]any{
 			"id": resp.ID, "created_at": resp.CreatedAt,
 			"duration": resp.Duration, "ip": resp.IP, "answers": map[string]string{},
+			"score": resp.Score, "profile": resp.Profile,
 		}
 		ansMap := item["answers"].(map[string]string)
 		for _, a := range byRID[resp.ID] {

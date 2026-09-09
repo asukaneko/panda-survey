@@ -137,6 +137,23 @@ func (s *StatsService) Stats(survey *model.Survey) ([]model.QuestionStats, int64
 
 func quoteJSON(s string) string { return `"` + s + `"` }
 
+// AvgScore 答题卷平均得分（无答卷返回 0，保留一位小数）。
+func (s *StatsService) AvgScore(surveyID int64) (float64, error) {
+	rows, err := s.Responses.List(surveyID)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	var sum int64
+	for _, r := range rows {
+		sum += r.Score
+	}
+	avg := float64(sum) / float64(len(rows))
+	return float64(int(avg*10+0.5)) / 10, nil
+}
+
 func countArrayValue(dist map[string]int, optionID string) int {
 	total := 0
 	for v, n := range dist {
@@ -304,6 +321,10 @@ func (s *StatsService) ExportDetail(survey *model.Survey) (string, error) {
 	}
 
 	csv := csvBOM + "序号,提交时间,填写耗时(秒)"
+	isQuiz := survey.Kind == model.KindQuiz
+	if isQuiz {
+		csv += ",得分,个人信息"
+	}
 	for _, q := range questions {
 		csv += "," + csvEscape(fmt.Sprintf("%d. %s", q.SortOrder, q.Title))
 	}
@@ -312,6 +333,9 @@ func (s *StatsService) ExportDetail(survey *model.Survey) (string, error) {
 	for i := len(responses) - 1; i >= 0; i-- {
 		r := responses[i]
 		csv += fmt.Sprintf("%d,%s,%d", len(responses)-i, r.CreatedAt, r.Duration)
+		if isQuiz {
+			csv += fmt.Sprintf(",%d,%s", r.Score, csvEscape(profileDisplay(r.Profile)))
+		}
 		for _, q := range questions {
 			cell := ""
 			for _, a := range byRID[r.ID] {
@@ -325,6 +349,22 @@ func (s *StatsService) ExportDetail(survey *model.Survey) (string, error) {
 		csv += "\r\n"
 	}
 	return csv, nil
+}
+
+// profileDisplay 个人信息 JSON 转可读文本。
+func profileDisplay(profileJSON string) string {
+	if profileJSON == "" {
+		return ""
+	}
+	var vals []model.ProfileValue
+	if err := json.Unmarshal([]byte(profileJSON), &vals); err != nil {
+		return profileJSON
+	}
+	parts := make([]string, 0, len(vals))
+	for _, v := range vals {
+		parts = append(parts, v.Label+"："+v.Value)
+	}
+	return strings.Join(parts, "；")
 }
 
 // ExportSummary 汇总 CSV：每题统计。

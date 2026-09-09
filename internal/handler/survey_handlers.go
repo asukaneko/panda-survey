@@ -14,6 +14,7 @@ import (
 type createSurveyReq struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
+	Kind        int    `json:"kind"` // 0 问卷 1 答题
 }
 
 func (d *Deps) handleCreateSurvey(w http.ResponseWriter, r *http.Request) {
@@ -22,9 +23,13 @@ func (d *Deps) handleCreateSurvey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Title) == "" {
-		req.Title = "未命名问卷"
+		if req.Kind == model.KindQuiz {
+			req.Title = "未命名答题"
+		} else {
+			req.Title = "未命名问卷"
+		}
 	}
-	s, err := d.Surveys.Create(middleware.User(r).UserID, strings.TrimSpace(req.Title), req.Description)
+	s, err := d.Surveys.Create(middleware.User(r).UserID, strings.TrimSpace(req.Title), req.Description, req.Kind)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, 1, err.Error())
 		return
@@ -75,10 +80,11 @@ func (d *Deps) handleGetSurvey(w http.ResponseWriter, r *http.Request) {
 }
 
 type saveSurveyReq struct {
-	Title       string                 `json:"title"`
-	Description string                 `json:"description"`
-	UpdatedAt   string                 `json:"updated_at"` // 乐观锁版本
+	Title       string                  `json:"title"`
+	Description string                  `json:"description"`
+	UpdatedAt   string                  `json:"updated_at"` // 乐观锁版本
 	Questions   []model.QuestionPayload `json:"questions"`
+	QuizConfig  *model.QuizConfig       `json:"quiz_config"` // 答题卷配置（kind=1 时生效）
 }
 
 func (d *Deps) handleSaveSurvey(w http.ResponseWriter, r *http.Request) {
@@ -93,8 +99,16 @@ func (d *Deps) handleSaveSurvey(w http.ResponseWriter, r *http.Request) {
 	if req.Questions == nil {
 		req.Questions = []model.QuestionPayload{}
 	}
+	// 答题卷才接受 quiz_config；普通问卷传 nil 忽略
+	var quiz *model.QuizConfig
+	if s, err := d.Surveys.Get(id); err == nil && s.Kind == model.KindQuiz {
+		quiz = req.QuizConfig
+		if quiz == nil {
+			quiz = &model.QuizConfig{}
+		}
+	}
 	err := d.SurveySvc.ValidateAndSave(id, middleware.User(r).UserID,
-		strings.TrimSpace(req.Title), req.Description, req.Questions, req.UpdatedAt)
+		strings.TrimSpace(req.Title), req.Description, req.Questions, quiz, req.UpdatedAt)
 	if err != nil {
 		mapErr(w, err)
 		return

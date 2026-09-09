@@ -120,6 +120,56 @@ func (d *Deps) handleAIGenerate(w http.ResponseWriter, r *http.Request) {
 	ok(w, gen)
 }
 
+// handleAIGenerateQuiz AI 生成答题卷草稿（标题/描述/答题配置/带答案与分值的题目）。
+func (d *Deps) handleAIGenerateQuiz(w http.ResponseWriter, r *http.Request) {
+	client, cfg, okClient := d.loadAIClient(w)
+	if !okClient {
+		return
+	}
+	u := middleware.User(r)
+	if !d.checkQuota(w, u.UserID, cfg) {
+		return
+	}
+	var req generateReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	ctx, cancel := longTaskCtx(r, cfg)
+	defer cancel()
+	gen, err := ai.GenerateQuiz(ctx, client, req.Prompt)
+	if err != nil {
+		fail(w, http.StatusBadRequest, 1006, err.Error())
+		return
+	}
+	d.AIUsage.Incr(u.UserID, "generate_quiz", 0)
+	ok(w, gen)
+}
+
+// handleAIGenerateBankQuestions AI 生成一组题库题目（预览后由前端逐个导入题库）。
+func (d *Deps) handleAIGenerateBankQuestions(w http.ResponseWriter, r *http.Request) {
+	client, cfg, okClient := d.loadAIClient(w)
+	if !okClient {
+		return
+	}
+	u := middleware.User(r)
+	if !d.checkQuota(w, u.UserID, cfg) {
+		return
+	}
+	var req generateReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	ctx, cancel := longTaskCtx(r, cfg)
+	defer cancel()
+	questions, err := ai.GenerateBankQuestions(ctx, client, req.Prompt)
+	if err != nil {
+		fail(w, http.StatusBadRequest, 1006, err.Error())
+		return
+	}
+	d.AIUsage.Incr(u.UserID, "generate_bank", 0)
+	ok(w, map[string]any{"questions": questions})
+}
+
 type agentEditReq struct {
 	SurveyID    int64  `json:"survey_id"`
 	Instruction string `json:"instruction"`

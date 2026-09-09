@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>题库管理 - 熊猫问卷</title>
+  <link rel="stylesheet" href="/css/base.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="logo" href="/">
+      <svg width="28" height="28" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="15" fill="#1f2329"/>
+        <circle cx="11" cy="13" r="4" fill="#fff"/>
+        <circle cx="21" cy="13" r="4" fill="#fff"/>
+        <circle cx="11.5" cy="13.5" r="1.8" fill="#1f2329"/>
+        <circle cx="20.5" cy="13.5" r="1.8" fill="#1f2329"/>
+        <ellipse cx="16" cy="21" rx="5" ry="3.4" fill="#fff"/>
+      </svg>
+      题库管理<span class="subtitle">维护答题卷的可复用题库</span>
+    </a>
+    <div class="spacer"></div>
+    <div class="user-box">
+      <a href="/console" class="btn btn-ghost btn-sm">返回工作台</a>
+      <span id="userName"></span>
+      <button class="btn btn-ghost btn-sm" id="logoutBtn">退出</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-title">我的题库</div>
+      <div id="bankList"></div>
+      <button class="btn btn-primary side-new" id="newBankBtn">+ 新建题库</button>
+    </aside>
+
+    <main class="main" id="mainArea">
+      <div id="bankEmpty" class="card" style="text-align:center;color:var(--text-3);padding:60px 20px">
+        左侧选择或新建一个题库，开始录入题目
+      </div>
+      <div id="bankDetail" style="display:none">
+        <div class="survey-head" style="display:flex;gap:10px;align-items:center">
+          <input class="input-title" id="bankName" placeholder="题库名称" style="flex:1">
+          <button class="btn btn-sm" id="renameBankBtn">重命名</button>
+          <button class="btn btn-sm btn-danger" id="deleteBankBtn">删除题库</button>
+        </div>
+        <div id="bankQuestionList" style="margin-top:12px"></div>
+        <div class="toolbar" style="margin-top:12px">
+          <button class="btn btn-primary" id="addQBtn">+ 添加题目</button>
+          <button class="btn" id="aiQBtn">AI 生成题目</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- AI 生成题目 -->
+  <div class="modal-mask" id="aiQModal">
+    <div class="modal" style="max-width:560px;max-height:85vh;overflow-y:auto">
+      <h3>AI 生成题目</h3>
+      <div class="field">
+        <label>描述需求</label>
+        <textarea class="input" id="aiQPrompt" rows="4"
+          placeholder="例如：出 5 道初中物理常识题，单选为主，每题 10 分"></textarea>
+        <div class="hint" id="aiQHint"></div>
+      </div>
+      <button class="btn btn-primary" id="aiQGenerateBtn">生成预览</button>
+      <div id="aiQPreview" style="margin-top:10px"></div>
+      <div class="modal-foot">
+        <button class="btn" id="aiQCancel">取消</button>
+        <button class="btn btn-primary" id="aiQImport" style="display:none">导入所选题目</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 题目编辑 -->
+  <div class="modal-mask" id="qModal">
+    <div class="modal" style="max-width:560px;max-height:85vh;overflow-y:auto">
+      <h3 id="qModalTitle">添加题目</h3>
+      <div class="field">
+        <label>题型</label>
+        <select class="input" id="qType">
+          <option value="single_choice">单选题</option>
+          <option value="multiple_choice">多选题</option>
+          <option value="dropdown">下拉题</option>
+          <option value="text">填空题</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>题干</label>
+        <input class="input" id="qTitle" placeholder="请输入题干">
+      </div>
+      <div class="field">
+        <label>分值</label>
+        <input class="input" id="qScore" type="number" min="1" max="1000" value="1">
+        <div class="hint">1 - 1000 分</div>
+      </div>
+      <div id="qOptionsBox"></div>
+      <div class="field" id="qTextBox" style="display:none">
+        <label>正确答案</label>
+        <input class="input" id="qTextCorrect" placeholder="多个可接受答案用逗号分隔，如：北京,Beijing">
+        <div class="hint">比对时忽略首尾空格与大小写</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="qCancel">取消</button>
+        <button class="btn btn-primary" id="qSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/banks.js"></script>
+</body>
+</html>

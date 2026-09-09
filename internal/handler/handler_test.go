@@ -45,6 +45,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		"web/login.html":    htmlPage,
 		"web/register.html": htmlPage,
 		"web/console.html":  htmlPage,
+		"web/banks.html":    htmlPage,
 		"web/admin.html":    htmlPage,
 		"web/stats.html":    htmlPage,
 		"web/fill.html":     htmlPage,
@@ -60,6 +61,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		Settings:  &store.SettingsStore{DB: database},
 		AIUsage:   &store.AIUsageStore{DB: database},
 		Admin:     &store.AdminStore{DB: database},
+		Banks:     &store.BankStore{DB: database},
 		SurveySvc: &service.SurveyService{Surveys: surveys, Responses: responses},
 		StatsSvc:  &service.StatsService{Surveys: surveys, Responses: responses},
 		Limiter:   middleware.NewRateLimiter(1000),
@@ -818,10 +820,110 @@ func TestAIEndpoints(t *testing.T) {
 	}
 }
 
+// TestAIGenerateQuiz AI 生成答题卷：返回带答案/分值题目与答题配置，可确认创建为 kind=1 答题卷
+func TestAIGenerateQuiz(t *testing.T) {
+	e := newTestEnv(t)
+	admin := registerAndLogin(e, "quizai")
+
+	genJSON := `{"title":"Java 测验","description":"d","quiz_config":{"duration_min":10,"show_answer":true,"display_mode":"paged"},
+		"questions":[{"type":"single_choice","title":"int 占多少位？","config":{"options":[{"label":"16"},{"label":"32"}],"score":5,"correct":"o2"}}]}`
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		content := "```json\n" + genJSON + "\n```"
+		fmt.Fprintf(w, `{"choices":[{"message":{"role":"assistant","content":%q},"finish_reason":"stop"}]}`, content)
+	}))
+	defer fake.Close()
+	e.do(admin, "POST", "/api/admin/ai-config", map[string]any{
+		"base_url": fake.URL, "api_key": "sk-fake", "model": "m", "daily_quota": 10,
+	})
+
+	st, m := e.do(admin, "POST", "/api/ai/generate-quiz", map[string]string{"prompt": "Java 基础测验"})
+	if st != 200 || code(m) != 0 {
+		t.Fatalf("生成答题卷失败: %v", m)
+	}
+	gen := dataMap(m)
+	if gen["quiz_config"] == nil {
+		t.Fatalf("应返回 quiz_config: %v", gen)
+	}
+	qs := gen["questions"].([]any)
+	cfg := qs[0].(map[string]any)["config"].(map[string]any)
+	if cfg["score"].(float64) != 5 || cfg["correct"].(string) != "o2" {
+		t.Fatalf("题目应带分值/答案: %v", cfg)
+	}
+
+	// 确认创建：建 kind=1 卷并用生成结果保存
+	st, m = e.do(admin, "POST", "/api/surveys", map[string]any{"title": gen["title"], "kind": 1})
+	if st != 200 {
+		t.Fatalf("创建答题卷失败: %v", m)
+	}
+	sid := fmt.Sprintf("%.0f", dataMap(m)["id"].(float64))
+	st, m = e.do(admin, "PUT", "/api/surveys/"+sid, map[string]any{
+		"title": gen["title"], "description": gen["description"],
+		"updated_at":  dataMap(m)["updated_at"].(string),
+		"questions":   gen["questions"],
+		"quiz_config": gen["quiz_config"],
+	})
+	if st != 200 || code(m) != 0 {
+		t.Fatalf("保存 AI 答题卷失败: %v", m)
+	}
+	// 回读：题目带分值/答案，配置生效
+	st, m = e.do(admin, "GET", "/api/surveys/"+sid, nil)
+	qs2 := dataMap(m)["questions"].([]any)
+	cfg2 := qs2[0].(map[string]any)["config"].(map[string]any)
+	if cfg2["score"].(float64) != 5 || cfg2["correct"] == nil {
+		t.Fatalf("回读题目应带分值/答案: %v", cfg2)
+	}
+	qc := dataMap(m)["survey"].(map[string]any)["quiz_config"].(map[string]any)
+	if qc["duration_min"].(float64) != 10 || qc["display_mode"].(string) != "paged" {
+		t.Fatalf("答题配置不符: %v", qc)
+	}
+}
+
+// TestAIGenerateBankQuestions AI 生成题库题目，可逐个导入题库
+func TestAIGenerateBankQuestions(t *testing.T) {
+	e := newTestEnv(t)
+	admin := registerAndLogin(e, "bankai")
+
+	genJSON := `{"questions":[
+		{"type":"single_choice","title":"1+1=？","config":{"options":[{"label":"2"},{"label":"3"}],"score":10,"correct":"o1"}},
+		{"type":"text","title":"水的化学式","config":{"max_len":20,"score":5,"correct":["H2O"]}}]}`
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"choices":[{"message":{"role":"assistant","content":%q},"finish_reason":"stop"}]}`, genJSON)
+	}))
+	defer fake.Close()
+	e.do(admin, "POST", "/api/admin/ai-config", map[string]any{
+		"base_url": fake.URL, "api_key": "sk-fake", "model": "m", "daily_quota": 10,
+	})
+
+	st, m := e.do(admin, "POST", "/api/ai/generate-bank-questions", map[string]string{"prompt": "小学常识题"})
+	if st != 200 || code(m) != 0 {
+		t.Fatalf("生成题库题目失败: %v", m)
+	}
+	qs := dataMap(m)["questions"].([]any)
+	if len(qs) != 2 {
+		t.Fatalf("应生成 2 题: %v", m)
+	}
+	// 导入题库
+	st, m = e.do(admin, "POST", "/api/banks", map[string]string{"name": "AI 题库"})
+	bankID := fmt.Sprintf("%.0f", dataMap(m)["id"].(float64))
+	for _, item := range qs {
+		q := item.(map[string]any)
+		st, m = e.do(admin, "POST", "/api/banks/"+bankID+"/questions", map[string]any{
+			"type": q["type"], "title": q["title"], "config": q["config"],
+		})
+		if st != 200 {
+			t.Fatalf("导入题库题目失败: %v", m)
+		}
+	}
+	st, m = e.do(admin, "GET", "/api/banks/"+bankID+"/questions", nil)
+	if len(dataMap(m)["questions"].([]any)) != 2 {
+		t.Fatalf("题库应有 2 题: %v", m)
+	}
+}
+
 // TestPagesEmbedded 页面路由返回 HTML
 func TestPagesEmbedded(t *testing.T) {
 	e := newTestEnv(t)
-	for _, p := range []string{"/", "/login", "/register", "/console", "/admin/settings", "/s/1", "/preview/1", "/stats/1"} {
+	for _, p := range []string{"/", "/login", "/register", "/console", "/banks", "/admin/settings", "/s/1", "/preview/1", "/stats/1"} {
 		resp, err := e.newClient().Get(e.srv.URL + p)
 		if err != nil || resp.StatusCode != 200 {
 			t.Fatalf("页面 %s 应 200: %v %d", p, err, resp.StatusCode)

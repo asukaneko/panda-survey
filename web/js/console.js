@@ -1,13 +1,13 @@
-// 管理端工作台：问卷列表 + 编辑器 + 发布/分享 + 统计标签页
+// 管理端工作台：问卷列表 + 编辑器 + 发布/分享 + 统计标签页（含答题卷编辑）
 import { api, toast, fmtTime } from '/js/api.js';
-import { TYPES, TYPE_LABEL, newQuestion, renderEditQuestion, renderFillQuestion } from '/js/renderers.js';
+import { TYPES, QUIZ_TYPES, TYPE_LABEL, newQuestion, newQuizQuestion, renderEditQuestion, renderFillQuestion } from '/js/renderers.js';
 import { initAI } from '/js/ai.js';
 import { renderStatsView } from '/js/statsview.js';
 
 const state = {
   me: null,
   surveys: [],
-  current: null,   // {id,title,description,status,updated_at,...}
+  current: null,   // {id,title,description,status,kind,quiz_config,updated_at,...}
   questions: [],   // [{id,type,title,required,config}]
   dirty: false,
   activeTab: 'design', // design | stats
@@ -15,6 +15,10 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
+
+function isQuiz() {
+  return !!state.current && state.current.kind === 1;
+}
 
 /* ---------- 顶栏 ---------- */
 
@@ -61,6 +65,16 @@ function statusBadge(st) {
   return b;
 }
 
+function kindTag(s) {
+  if (s.kind !== 1) {
+    return null;
+  }
+  const t = document.createElement('span');
+  t.className = 'quiz-tag';
+  t.textContent = '答题';
+  return t;
+}
+
 async function loadList(selectId) {
   state.surveys = await api('/api/surveys');
   const box = $('surveyList');
@@ -73,6 +87,10 @@ async function loadList(selectId) {
     name.textContent = s.title || '未命名问卷';
     name.title = s.title;
     item.appendChild(name);
+    const tag = kindTag(s);
+    if (tag) {
+      item.appendChild(tag);
+    }
     item.appendChild(statusBadge(s.status));
     item.addEventListener('click', async () => {
       closeDrawer();
@@ -106,6 +124,10 @@ function renderMain() {
   const showStats = has && state.activeTab === 'stats';
   $('editor').style.display = showEditor ? '' : 'none';
   $('statsArea').style.display = showStats ? '' : 'none';
+  $('quizSettings').style.display = (showEditor && isQuiz()) ? '' : 'none';
+  if (has && state.activeTab === 'design') {
+    renderQuizSettings();
+  }
   if (!has && state.activeTab !== 'design') {
     setTab('design');
   }
@@ -139,6 +161,7 @@ async function selectSurvey(id) {
   renderMain();
   bindHead();
   renderQuestions();
+  renderAddBar();
   renderTopActions();
   refreshSidebarActive();
   if (state.activeTab === 'stats') {
@@ -155,7 +178,6 @@ async function selectSurvey(id) {
 // 仅重绘侧栏（不重新选中）
 async function loadListKeepCurrent() {
   const cur = state.current && state.current.id;
-  const sel = window.__selected;
   state.surveys = await api('/api/surveys');
   const box = $('surveyList');
   box.textContent = '';
@@ -166,6 +188,10 @@ async function loadListKeepCurrent() {
     name.className = 's-name';
     name.textContent = s.title || '未命名问卷';
     item.appendChild(name);
+    const tag = kindTag(s);
+    if (tag) {
+      item.appendChild(tag);
+    }
     item.appendChild(statusBadge(s.status));
     item.addEventListener('click', () => selectSurvey(s.id));
     box.appendChild(item);
@@ -189,8 +215,10 @@ function markDirty() {
 function renderQuestions() {
   const box = $('questionList');
   box.textContent = '';
+  const quiz = isQuiz();
   const handlers = {
     onChange: markDirty,
+    onStruct: quiz ? () => { markDirty(); renderQuestions(); } : null,
     onMove: (idx, dir) => {
       const to = idx + dir;
       if (to < 0 || to >= state.questions.length) {
@@ -212,14 +240,15 @@ function renderQuestions() {
     onAI: state.ai.enabled ? optimizeQuestionAt : null,
   };
   state.questions.forEach((q, i) => {
-    box.appendChild(renderEditQuestion(q, i, handlers, state.questions));
+    box.appendChild(renderEditQuestion(q, i, handlers, state.questions, { quiz }));
   });
 }
 
 function renderAddBar() {
   const bar = $('addBar');
   bar.textContent = '';
-  TYPES.forEach((t) => {
+  const types = isQuiz() ? QUIZ_TYPES : TYPES;
+  types.forEach((t) => {
     const b = document.createElement('button');
     b.className = 'btn btn-sm';
     b.textContent = '+ ' + t.label;
@@ -227,7 +256,7 @@ function renderAddBar() {
       if (!state.current) {
         return;
       }
-      state.questions.push(newQuestion(t.type));
+      state.questions.push(isQuiz() ? newQuizQuestion(t.type) : newQuestion(t.type));
       markDirty();
       renderQuestions();
       const cards = document.querySelectorAll('.q-card');
@@ -239,22 +268,331 @@ function renderAddBar() {
   });
 }
 
+/* ---------- 答题设置 ---------- */
+
+// 归一化答题配置（缺失字段补默认值）
+function quizCfg() {
+  if (!state.current.quiz_config || typeof state.current.quiz_config !== 'object') {
+    state.current.quiz_config = {};
+  }
+  const c = state.current.quiz_config;
+  if (!c.display_mode) {
+    c.display_mode = 'list';
+  }
+  if (!c.question_order) {
+    c.question_order = 'sequential';
+  }
+  if (!Array.isArray(c.profile_fields)) {
+    c.profile_fields = [];
+  }
+  return c;
+}
+
+function renderQuizSettings() {
+  const box = $('quizSettings');
+  if (!isQuiz()) {
+    box.textContent = '';
+    box.style.display = 'none';
+    return;
+  }
+  const c = quizCfg();
+  box.textContent = '';
+  box.style.display = '';
+
+  const card = document.createElement('div');
+  card.className = 'card quiz-settings-card';
+
+  const head = document.createElement('div');
+  head.className = 'quiz-settings-head';
+  const h = document.createElement('h4');
+  h.textContent = '答题设置';
+  head.appendChild(h);
+  const pickBank = document.createElement('button');
+  pickBank.className = 'btn btn-primary btn-sm';
+  pickBank.textContent = '从题库选题';
+  pickBank.addEventListener('click', openBankModal);
+  head.appendChild(pickBank);
+  card.appendChild(head);
+
+  const meta = document.createElement('div');
+  meta.className = 'q-meta';
+  meta.style.flexWrap = 'wrap';
+
+  // 倒计时
+  const durLab = document.createElement('label');
+  durLab.style.display = 'flex';
+  durLab.style.alignItems = 'center';
+  durLab.style.gap = '4px';
+  durLab.appendChild(document.createTextNode('倒计时'));
+  const dur = document.createElement('input');
+  dur.type = 'number';
+  dur.className = 'num';
+  dur.min = 0;
+  dur.max = 600;
+  dur.style.width = '70px';
+  dur.value = c.duration_min || 0;
+  dur.title = '0 为不限时';
+  dur.addEventListener('change', () => {
+    let v = parseInt(dur.value, 10);
+    if (isNaN(v) || v < 0) {
+      v = 0;
+    }
+    if (v > 600) {
+      v = 600;
+    }
+    dur.value = v;
+    c.duration_min = v;
+    markDirty();
+  });
+  durLab.appendChild(dur);
+  durLab.appendChild(document.createTextNode('分钟（0 不限时）'));
+  meta.appendChild(durLab);
+
+  // 展示方式（互斥）：列表 / 分页
+  const mkRadio = (name, value, checked, text, onSet) => {
+    const lab = document.createElement('label');
+    lab.style.cssText = 'display:flex;align-items:center;gap:4px';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = name;
+    input.value = value;
+    input.checked = checked;
+    input.addEventListener('change', () => {
+      if (input.checked) {
+        onSet(input.value);
+        markDirty();
+      }
+    });
+    lab.appendChild(input);
+    lab.appendChild(document.createTextNode(text));
+    return lab;
+  };
+  const modeGroup = elDiv('');
+  modeGroup.style.cssText = 'display:flex;gap:10px;align-items:center';
+  modeGroup.appendChild(document.createTextNode('展示方式'));
+  modeGroup.appendChild(mkRadio('quizMode', 'list', c.display_mode === 'list', '列表展示', (v) => { c.display_mode = v; }));
+  modeGroup.appendChild(mkRadio('quizMode', 'paged', c.display_mode === 'paged', '分页展示（一题一页）', (v) => { c.display_mode = v; }));
+  meta.appendChild(modeGroup);
+
+  const orderGroup = elDiv('');
+  orderGroup.style.cssText = 'display:flex;gap:10px;align-items:center';
+  orderGroup.appendChild(document.createTextNode('题目顺序'));
+  orderGroup.appendChild(mkRadio('quizOrder', 'sequential', c.question_order === 'sequential', '顺序', (v) => { c.question_order = v; }));
+  orderGroup.appendChild(mkRadio('quizOrder', 'random', c.question_order === 'random', '随机', (v) => { c.question_order = v; }));
+  meta.appendChild(orderGroup);
+
+  const mkCheck = (checked, text, onSet) => {
+    const lab = document.createElement('label');
+    lab.style.cssText = 'display:flex;align-items:center;gap:4px';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = !!checked;
+    input.addEventListener('change', () => {
+      onSet(input.checked);
+      markDirty();
+    });
+    lab.appendChild(input);
+    lab.appendChild(document.createTextNode(text));
+    return lab;
+  };
+  meta.appendChild(mkCheck(c.show_answer, '提交后展示答案', (v) => { c.show_answer = v; }));
+  meta.appendChild(mkCheck(c.show_ranking, '答题后可查看排行', (v) => { c.show_ranking = v; }));
+  meta.appendChild(mkCheck(c.collect_profile, '答题前填写个人信息', (v) => {
+    c.collect_profile = v;
+    if (v && c.profile_fields.length === 0) {
+      c.profile_fields.push({ label: '姓名', required: true }, { label: '手机号', required: false });
+    }
+    markDirty();
+    renderQuizSettings();
+  }));
+  card.appendChild(meta);
+
+  // 个人信息字段编辑
+  if (c.collect_profile) {
+    const pf = elDiv('');
+    pf.style.cssText = 'margin-top:8px;padding:8px 10px;border:1px dashed var(--border);border-radius:6px';
+    const pfTitle = elDiv('');
+    pfTitle.style.cssText = 'font-size:13px;color:var(--text-2);margin-bottom:6px';
+    pfTitle.textContent = '个人信息字段（最多 5 个）：';
+    pf.appendChild(pfTitle);
+    c.profile_fields.forEach((f, i) => {
+      const row = elDiv('opt-row');
+      row.style.paddingLeft = '0';
+      const labelInput = document.createElement('input');
+      labelInput.type = 'text';
+      labelInput.className = 'input';
+      labelInput.style.maxWidth = '180px';
+      labelInput.value = f.label;
+      labelInput.placeholder = '字段名，如 姓名';
+      labelInput.addEventListener('input', () => {
+        f.label = labelInput.value;
+        markDirty();
+      });
+      row.appendChild(labelInput);
+      row.appendChild(mkCheck(f.required, '必填', (v) => { f.required = v; }));
+      const del = document.createElement('button');
+      del.className = 'btn btn-ghost btn-sm';
+      del.type = 'button';
+      del.textContent = '删除';
+      del.addEventListener('click', () => {
+        c.profile_fields.splice(i, 1);
+        markDirty();
+        renderQuizSettings();
+      });
+      row.appendChild(del);
+      pf.appendChild(row);
+    });
+    if (c.profile_fields.length < 5) {
+      const add = document.createElement('button');
+      add.className = 'btn btn-sm';
+      add.type = 'button';
+      add.textContent = '+ 添加字段';
+      add.style.marginTop = '6px';
+      add.addEventListener('click', () => {
+        c.profile_fields.push({ label: '', required: false });
+        markDirty();
+        renderQuizSettings();
+      });
+      pf.appendChild(add);
+    }
+    card.appendChild(pf);
+  }
+
+  box.appendChild(card);
+}
+
+function elDiv(cls) {
+  const d = document.createElement('div');
+  if (cls) {
+    d.className = cls;
+  }
+  return d;
+}
+
+/* ---------- 从题库选题 ---------- */
+
+let bankQuestionsCache = []; // 当前所选题库的题目
+
+async function openBankModal() {
+  const sel = $('bankSelect');
+  const list = $('bankQuestionList');
+  list.innerHTML = '';
+  list.appendChild(Object.assign(document.createElement('p'), {
+    textContent: '加载中……', style: 'color:var(--text-2);font-size:13px',
+  }));
+  document.querySelectorAll('input[name="bankOrder"]').forEach((r) => {
+    r.checked = r.value === quizCfg().question_order;
+  });
+  $('bankModal').classList.add('open');
+  try {
+    const banks = await api('/api/banks');
+    sel.textContent = '';
+    if (banks.length === 0) {
+      list.innerHTML = '';
+      list.appendChild(Object.assign(document.createElement('p'), {
+        textContent: '还没有题库，请先到「题库管理」创建并录入题目',
+        style: 'color:var(--text-2);font-size:13px',
+      }));
+      return;
+    }
+    banks.forEach((b) => {
+      const opt = document.createElement('option');
+      opt.value = b.id;
+      opt.textContent = b.name + '（' + b.question_count + ' 题）';
+      sel.appendChild(opt);
+    });
+    await loadBankQuestions(parseInt(sel.value, 10));
+  } catch (e) {
+    list.innerHTML = '';
+    list.appendChild(Object.assign(document.createElement('p'), { textContent: e.message }));
+  }
+}
+
+async function loadBankQuestions(bankId) {
+  const list = $('bankQuestionList');
+  bankQuestionsCache = [];
+  list.innerHTML = '';
+  list.appendChild(Object.assign(document.createElement('p'), {
+    textContent: '加载中……', style: 'color:var(--text-2);font-size:13px',
+  }));
+  try {
+    const data = await api('/api/banks/' + bankId + '/questions');
+    bankQuestionsCache = data.questions || [];
+    list.innerHTML = '';
+    if (bankQuestionsCache.length === 0) {
+      list.appendChild(Object.assign(document.createElement('p'), {
+        textContent: '该题库暂无题目', style: 'color:var(--text-2);font-size:13px',
+      }));
+      return;
+    }
+    bankQuestionsCache.forEach((q) => {
+      const lab = document.createElement('label');
+      lab.className = 'bank-q-row';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = q.id;
+      lab.appendChild(cb);
+      const info = document.createElement('span');
+      info.textContent = TYPE_LABEL[q.type] + ' · ' + (q.config.score || 1) + ' 分 · ' + q.title;
+      lab.appendChild(info);
+      list.appendChild(lab);
+    });
+  } catch (e) {
+    list.innerHTML = '';
+    list.appendChild(Object.assign(document.createElement('p'), { textContent: e.message }));
+  }
+}
+
+function importFromBank() {
+  const sel = $('bankSelect');
+  const bankId = parseInt(sel.value, 10);
+  const chosen = bankQuestionsCache.filter((q) => {
+    const cb = document.querySelector('#bankQuestionList input[value="' + q.id + '"]');
+    return cb && cb.checked;
+  });
+  if (chosen.length === 0) {
+    toast('请先勾选题目', true);
+    return;
+  }
+  const order = document.querySelector('input[name="bankOrder"]:checked');
+  if (order) {
+    quizCfg().question_order = order.value;
+  }
+  chosen.forEach((q) => {
+    // 复制进答题卷：id 置 0 表示新题，config 深拷贝避免与题库联动
+    state.questions.push({
+      id: 0,
+      type: q.type,
+      title: q.title,
+      required: false,
+      config: JSON.parse(JSON.stringify(q.config || {})),
+      _fromBank: bankId,
+    });
+  });
+  markDirty();
+  renderQuizSettings();
+  renderQuestions();
+  $('bankModal').classList.remove('open');
+  toast('已导入 ' + chosen.length + ' 道题，记得保存');
+}
+
 /* ---------- 保存 / 状态操作 ---------- */
 
 async function saveSurvey() {
   if (!state.current) {
     return;
   }
+  const body = {
+    title: state.current.title,
+    description: state.current.description,
+    updated_at: state.current.updated_at,
+    questions: state.questions,
+  };
+  if (isQuiz()) {
+    body.quiz_config = quizCfg();
+  }
   try {
-    const s = await api('/api/surveys/' + state.current.id, {
-      method: 'PUT',
-      body: {
-        title: state.current.title,
-        description: state.current.description,
-        updated_at: state.current.updated_at,
-        questions: state.questions,
-      },
-    });
+    const s = await api('/api/surveys/' + state.current.id, { method: 'PUT', body });
     state.current = { ...state.current, ...s };
     state.dirty = false;
     toast('已保存');
@@ -467,13 +805,30 @@ async function boot() {
 
 $('newBtn').addEventListener('click', async () => {
   try {
-    const s = await api('/api/surveys', { method: 'POST', body: { title: '未命名问卷', description: '' } });
+    const s = await api('/api/surveys', { method: 'POST', body: { title: '未命名问卷', description: '', kind: 0 } });
     closeDrawer();
     await loadList(s.id);
   } catch (e) {
     toast(e.message, true);
   }
 });
+$('newQuizBtn').addEventListener('click', async () => {
+  try {
+    const s = await api('/api/surveys', { method: 'POST', body: { title: '未命名答题', description: '', kind: 1 } });
+    closeDrawer();
+    await loadList(s.id);
+  } catch (e) {
+    toast(e.message, true);
+  }
+});
+$('banksBtn').addEventListener('click', () => {
+  location.href = '/banks';
+});
+$('bankSelect').addEventListener('change', () => {
+  loadBankQuestions(parseInt($('bankSelect').value, 10));
+});
+$('bankCancel').addEventListener('click', () => $('bankModal').classList.remove('open'));
+$('bankImport').addEventListener('click', importFromBank);
 $('logoutBtn').addEventListener('click', async () => {
   await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
   location.href = '/login';

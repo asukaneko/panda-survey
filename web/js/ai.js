@@ -49,17 +49,23 @@ function mountEntryButton() {
     switchAITab('create');
     updateQuotaHint();
   });
+  document.getElementById('aiTabQuiz').addEventListener('click', () => {
+    switchAITab('quiz');
+    updateQuotaHint(true);
+  });
 }
 
 function switchAITab(tab) {
   document.getElementById('aiTabEdit').classList.toggle('active', tab === 'edit');
   document.getElementById('aiTabCreate').classList.toggle('active', tab === 'create');
+  document.getElementById('aiTabQuiz').classList.toggle('active', tab === 'quiz');
   document.getElementById('aiEditView').style.display = tab === 'edit' ? 'flex' : 'none';
   document.getElementById('aiCreateView').style.display = tab === 'create' ? 'flex' : 'none';
+  document.getElementById('aiCreateQuizView').style.display = tab === 'quiz' ? 'flex' : 'none';
 }
 
-function updateQuotaHint() {
-  const hint = document.getElementById('aiQuotaHint');
+function updateQuotaHint(isQuiz) {
+  const hint = document.getElementById(isQuiz ? 'aiQuizQuotaHint' : 'aiQuotaHint');
   if (hint) {
     hint.textContent = '今日已用 ' + state.ai.usedToday + ' / ' + state.ai.quota + ' 次';
   }
@@ -269,4 +275,129 @@ document.getElementById('aiApplyBtn').addEventListener('click', () => {
   hooks.renderQuestions();
   document.getElementById('aiProposal').style.display = 'none';
   toast('已应用到编辑器，请检查后手动保存');
+});
+
+/* ---------- AI 创建答题 ---------- */
+
+let generatedQuiz = null;
+
+document.getElementById('aiQuizGenerateBtn').addEventListener('click', async () => {
+  if (!state.ai.enabled) {
+    toast('AI 服务未配置，请联系管理员在设置页配置后使用', true);
+    return;
+  }
+  const prompt = document.getElementById('aiQuizPrompt').value.trim();
+  if (!prompt) {
+    toast('请先描述需求', true);
+    return;
+  }
+  const btn = document.getElementById('aiQuizGenerateBtn');
+  btn.disabled = true;
+  const box = document.getElementById('aiQuizPreview');
+  box.textContent = '正在生成答题卷，大模型生成整卷题目通常需要 1-3 分钟，请耐心等待……';
+  const controller = new AbortController();
+  let waited = 0;
+  const timer = setInterval(() => {
+    waited += 1;
+    btn.textContent = '生成中 ' + waited + 's';
+  }, 1000);
+  const killer = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+  try {
+    generatedQuiz = await api('/api/ai/generate-quiz', {
+      method: 'POST',
+      body: { prompt },
+      signal: controller.signal,
+    });
+    renderQuizPreview(box, generatedQuiz);
+    document.getElementById('aiQuizCreateConfirm').style.display = '';
+    afterAICall();
+    updateQuotaHint(true);
+  } catch (e) {
+    box.textContent = '生成失败：' + e.message;
+    toast(e.message, true);
+  } finally {
+    clearInterval(timer);
+    clearTimeout(killer);
+    btn.disabled = false;
+    btn.textContent = '生成预览';
+  }
+});
+
+// 答题配置转可读摘要
+function quizConfigSummary(cfg) {
+  const c = cfg || {};
+  const parts = [];
+  parts.push(c.duration_min > 0 ? '限时 ' + c.duration_min + ' 分钟' : '不限时');
+  parts.push(c.display_mode === 'paged' ? '分页展示' : '列表展示');
+  parts.push(c.question_order === 'random' ? '随机排序' : '顺序出题');
+  if (c.show_answer) {
+    parts.push('展示答案');
+  }
+  if (c.collect_profile) {
+    parts.push('收集个人信息');
+  }
+  if (c.show_ranking) {
+    parts.push('排行榜');
+  }
+  return parts.join(' · ');
+}
+
+function renderQuizPreview(box, gen) {
+  box.textContent = '';
+  const head = document.createElement('div');
+  head.style.marginBottom = '10px';
+  const t = document.createElement('b');
+  t.textContent = gen.title;
+  head.appendChild(t);
+  if (gen.description) {
+    const d = document.createElement('div');
+    d.style.cssText = 'color:var(--text-2);font-size:13px';
+    d.textContent = gen.description;
+    head.appendChild(d);
+  }
+  const meta = document.createElement('div');
+  meta.style.cssText = 'color:var(--text-2);font-size:12px;margin-top:2px';
+  meta.textContent = gen.questions.length + ' 道题 · ' + quizConfigSummary(gen.quiz_config);
+  head.appendChild(meta);
+  box.appendChild(head);
+  gen.questions.forEach((q, i) => {
+    const fake = { id: 'genq' + i, ...q };
+    const item = renderFillQuestion(fake);
+    item.root.classList.remove('fill-card');
+    item.root.style.cssText = 'border:1px solid var(--border);padding:10px;margin-bottom:8px;border-radius:8px';
+    box.appendChild(item.root);
+  });
+}
+
+document.getElementById('aiQuizCreateConfirm').addEventListener('click', async () => {
+  if (!generatedQuiz) {
+    return;
+  }
+  try {
+    const s = await api('/api/surveys', {
+      method: 'POST',
+      body: { title: generatedQuiz.title, description: generatedQuiz.description, kind: 1 },
+    });
+    await api('/api/surveys/' + s.id, {
+      method: 'PUT',
+      body: {
+        title: generatedQuiz.title,
+        description: generatedQuiz.description,
+        updated_at: s.updated_at,
+        questions: generatedQuiz.questions,
+        quiz_config: generatedQuiz.quiz_config,
+      },
+    });
+    generatedQuiz = null;
+    document.getElementById('aiQuizPreview').textContent = '';
+    document.getElementById('aiQuizCreateConfirm').style.display = 'none';
+    document.getElementById('aiQuizPrompt').value = '';
+    switchAITab('edit');
+    document.getElementById('aiPanel').classList.remove('open');
+    document.body.classList.remove('ai-open');
+    toast('AI 答题卷已创建为草稿，可继续调整');
+    hooks.reload(s.id);
+  } catch (e) {
+    toast(e.message, true);
+  }
 });

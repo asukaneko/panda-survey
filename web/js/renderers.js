@@ -13,6 +13,14 @@ export const TYPES = [
   { type: 'sorting', label: '排序题' },
 ];
 
+// 答题卷可用题型（均可自动判分）
+export const QUIZ_TYPES = [
+  { type: 'single_choice', label: '单选题' },
+  { type: 'multiple_choice', label: '多选题' },
+  { type: 'dropdown', label: '下拉题' },
+  { type: 'text', label: '填空题' },
+];
+
 export const TYPE_LABEL = Object.fromEntries(TYPES.map((t) => [t.type, t.label]));
 
 export function newQuestion(type) {
@@ -51,6 +59,21 @@ export function newQuestion(type) {
   return q;
 }
 
+// 新建答题卷题目：必答关闭（答题按未答记 0 分）、默认 1 分、预置正确答案占位
+export function newQuizQuestion(type) {
+  const q = newQuestion(type);
+  q.required = false;
+  q.config.score = 1;
+  if (type === 'single_choice' || type === 'dropdown') {
+    q.config.correct = q.config.options[0].id;
+  } else if (type === 'multiple_choice') {
+    q.config.correct = [q.config.options[0].id];
+  } else if (type === 'text') {
+    q.config.correct = [];
+  }
+  return q;
+}
+
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) {
@@ -84,6 +107,10 @@ export function renderFillQuestion(q) {
     title.appendChild(el('span', 'req', '*'));
   }
   title.appendChild(document.createTextNode(q.title));
+  // 答题卷：分值徽标
+  if (q.config && q.config.score > 0) {
+    title.appendChild(el('span', 'score-badge', q.config.score + ' 分'));
+  }
   card.appendChild(title);
 
   let collect;
@@ -317,7 +344,9 @@ function renderChoices(card, q) {
 /* ============ 编辑态 ============ */
 
 // 编辑卡片：直接修改传入的 q 对象；结构变化（增删选项/题）调用 onStruct 重渲染
-export function renderEditQuestion(q, idx, handlers, allQuestions) {
+// opts.quiz 为 true 时按答题卷渲染：隐藏必答/分页标记，展示分值与正确答案编辑
+export function renderEditQuestion(q, idx, handlers, allQuestions, opts) {
+  const quizMode = !!(opts && opts.quiz);
   const card = el('div', 'q-card');
   card.dataset.idx = idx;
 
@@ -355,33 +384,44 @@ export function renderEditQuestion(q, idx, handlers, allQuestions) {
   const typeLab = el('label', '', TYPE_LABEL[q.type] || q.type);
   meta.appendChild(typeLab);
 
-  const reqLab = el('label');
-  const req = document.createElement('input');
-  req.type = 'checkbox';
-  req.checked = !!q.required;
-  req.addEventListener('change', () => {
-    q.required = req.checked;
-    handlers.onChange();
-  });
-  reqLab.appendChild(req);
-  reqLab.appendChild(document.createTextNode('必答'));
-  meta.appendChild(reqLab);
+  if (!quizMode) {
+    const reqLab = el('label');
+    const req = document.createElement('input');
+    req.type = 'checkbox';
+    req.checked = !!q.required;
+    req.addEventListener('change', () => {
+      q.required = req.checked;
+      handlers.onChange();
+    });
+    reqLab.appendChild(req);
+    reqLab.appendChild(document.createTextNode('必答'));
+    meta.appendChild(reqLab);
 
-  // 分页标记：该题之后分页
-  const pbLab = el('label');
-  const pb = document.createElement('input');
-  pb.type = 'checkbox';
-  pb.checked = !!q.config.page_break_after;
-  pb.addEventListener('change', () => {
-    q.config.page_break_after = pb.checked;
-    handlers.onChange();
-  });
-  pbLab.appendChild(pb);
-  pbLab.appendChild(document.createTextNode('此后分页'));
-  meta.appendChild(pbLab);
+    // 分页标记：该题之后分页（仅问卷；答题卷用「一题一页」展示模式）
+    const pbLab = el('label');
+    const pb = document.createElement('input');
+    pb.type = 'checkbox';
+    pb.checked = !!q.config.page_break_after;
+    pb.addEventListener('change', () => {
+      q.config.page_break_after = pb.checked;
+      handlers.onChange();
+    });
+    pbLab.appendChild(pb);
+    pbLab.appendChild(document.createTextNode('此后分页'));
+    meta.appendChild(pbLab);
+  } else {
+    // 答题卷：分值
+    meta.appendChild(numControl('分值', q.config.score > 0 ? q.config.score : 1, 1, 1000,
+      (v) => { q.config.score = v; handlers.onChange(); }));
+  }
   card.appendChild(meta);
 
   appendConfigEditor(card, q, handlers);
+
+  // 答题卷：正确答案编辑
+  if (quizMode) {
+    appendCorrectEditor(card, q, handlers);
+  }
 
   // 显示条件（逻辑跳转）：依赖前面的单选/下拉题
   if (allQuestions) {
@@ -416,8 +456,14 @@ function numControl(labelText, value, min, max, onSet) {
 }
 
 // 选项列表编辑器（单选/多选/下拉/排序共用）
+// 结构变化（增删选项）时先回调 onStruct（重渲染正确答案等派生编辑器），再本地重绘
 function optionsEditor(q, handlers, rerender) {
   const wrap = el('div', '');
+  const structChange = () => {
+    if (handlers.onStruct) {
+      handlers.onStruct();
+    }
+  };
   const draw = () => {
     wrap.textContent = '';
     q.config.options.forEach((o, oi) => {
@@ -440,7 +486,13 @@ function optionsEditor(q, handlers, rerender) {
         del.type = 'button';
         del.addEventListener('click', () => {
           q.config.options.splice(oi, 1);
+          if (q.config.correct === o.id) {
+            q.config.correct = q.config.options[0] ? q.config.options[0].id : undefined;
+          } else if (Array.isArray(q.config.correct)) {
+            q.config.correct = q.config.correct.filter((id) => id !== o.id);
+          }
           handlers.onChange();
+          structChange();
           draw();
         });
         row.appendChild(del);
@@ -459,6 +511,7 @@ function optionsEditor(q, handlers, rerender) {
         }
         q.config.options.push({ id: 'o' + n, label: '' });
         handlers.onChange();
+        structChange();
         draw();
       });
       wrap.appendChild(add);
@@ -549,6 +602,79 @@ function appendConfigEditor(card, q, handlers) {
     card.appendChild(matrixItemsEditor(q, 'cols', '列', handlers));
   }
   // date 题无额外配置
+}
+
+// 正确答案编辑器（答题卷）：单选/下拉单选一项，多选勾选多项，填空多个可接受答案
+function appendCorrectEditor(card, q, handlers) {
+  const box = el('div', '');
+  box.style.cssText = 'margin-top:8px;padding:8px 10px;border:1px dashed var(--ok,#2BA245);border-radius:6px';
+  const label = el('div', '');
+  label.style.cssText = 'font-size:13px;color:var(--text-2);margin-bottom:6px';
+  label.textContent = '正确答案：';
+  box.appendChild(label);
+
+  if (q.type === 'single_choice' || q.type === 'dropdown') {
+    const row = el('div', '');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px 14px';
+    (q.config.options || []).forEach((o) => {
+      const lab = el('label', '');
+      lab.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:13px';
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'correct-' + Math.random().toString(36).slice(2, 8);
+      input.checked = q.config.correct === o.id;
+      input.addEventListener('change', () => {
+        if (input.checked) {
+          q.config.correct = o.id;
+          handlers.onChange();
+        }
+      });
+      lab.appendChild(input);
+      lab.appendChild(document.createTextNode(o.label || o.id));
+      row.appendChild(lab);
+    });
+    box.appendChild(row);
+  } else if (q.type === 'multiple_choice') {
+    const row = el('div', '');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px 14px';
+    (q.config.options || []).forEach((o) => {
+      const lab = el('label', '');
+      lab.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:13px';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = Array.isArray(q.config.correct) && q.config.correct.includes(o.id);
+      cb.addEventListener('change', () => {
+        const ids = new Set(Array.isArray(q.config.correct) ? q.config.correct : []);
+        if (cb.checked) {
+          ids.add(o.id);
+        } else {
+          ids.delete(o.id);
+        }
+        q.config.correct = Array.from(ids);
+        handlers.onChange();
+      });
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode(o.label || o.id));
+      row.appendChild(lab);
+    });
+    box.appendChild(row);
+  } else if (q.type === 'text') {
+    const hint = el('div', '');
+    hint.style.cssText = 'font-size:12px;color:var(--text-3)';
+    hint.textContent = '多个可接受答案用逗号分隔；比对时忽略首尾空格与大小写';
+    box.appendChild(hint);
+    const input = el('input', 'input');
+    input.type = 'text';
+    input.placeholder = '如：北京,Beijing';
+    const texts = Array.isArray(q.config.correct) ? q.config.correct : [];
+    input.value = texts.join(',');
+    input.addEventListener('input', () => {
+      q.config.correct = input.value.split(/[,，、;；]/).map((s) => s.trim()).filter((s) => s !== '');
+      handlers.onChange();
+    });
+    box.appendChild(input);
+  }
+  card.appendChild(box);
 }
 
 // 显示条件编辑器：依赖题下拉 + 条件选项多选 + 清除

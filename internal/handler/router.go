@@ -23,6 +23,7 @@ type Deps struct {
 	Settings      *store.SettingsStore
 	AIUsage       *store.AIUsageStore
 	Admin         *store.AdminStore
+	Banks         *store.BankStore
 	SurveySvc     *service.SurveyService
 	StatsSvc      *service.StatsService
 	Limiter       *middleware.RateLimiter
@@ -72,11 +73,22 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, webFS fs.FS) {
 	// 填答与统计
 	mux.Handle("GET /api/surveys/{id}/public", chain(d.handlePublicView, base...))
 	mux.Handle("POST /api/surveys/{id}/responses", chain(d.handleSubmit, base...))
+	mux.Handle("GET /api/surveys/{id}/leaderboard", chain(d.handleLeaderboard, base...))
 	mux.Handle("GET /api/surveys/{id}/stats", chain(d.handleStats, authed...))
 	mux.Handle("GET /api/surveys/{id}/responses", chain(d.handleListResponses, authed...))
 	mux.Handle("GET /api/surveys/{id}/export", chain(d.handleExportCSV, authed...))
 	mux.Handle("DELETE /api/surveys/{id}/responses/{rid}", chain(d.handleDeleteResponse, authed...))
 	mux.Handle("POST /api/surveys/sweep", chain(d.handleSweep, admin...))
+
+	// 题库（需登录，仅限本人）
+	mux.Handle("GET /api/banks", chain(d.handleListBanks, authed...))
+	mux.Handle("POST /api/banks", chain(d.handleCreateBank, authed...))
+	mux.Handle("PUT /api/banks/{id}", chain(d.handleRenameBank, authed...))
+	mux.Handle("DELETE /api/banks/{id}", chain(d.handleDeleteBank, authed...))
+	mux.Handle("GET /api/banks/{id}/questions", chain(d.handleListBankQuestions, authed...))
+	mux.Handle("POST /api/banks/{id}/questions", chain(d.handleAddBankQuestion, authed...))
+	mux.Handle("PUT /api/banks/{id}/questions/{qid}", chain(d.handleUpdateBankQuestion, authed...))
+	mux.Handle("DELETE /api/banks/{id}/questions/{qid}", chain(d.handleDeleteBankQuestion, authed...))
 
 	// 管理员：AI 配置 + 后台管理
 	mux.Handle("GET /api/admin/ai-config", chain(d.handleGetAIConfig, admin...))
@@ -103,6 +115,8 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, webFS fs.FS) {
 	// AI 能力（需登录 + 配额）
 	mux.Handle("GET /api/ai/status", chain(d.handleAIStatus, authed...))
 	mux.Handle("POST /api/ai/generate-survey", chain(d.handleAIGenerate, authed...))
+	mux.Handle("POST /api/ai/generate-quiz", chain(d.handleAIGenerateQuiz, authed...))
+	mux.Handle("POST /api/ai/generate-bank-questions", chain(d.handleAIGenerateBankQuestions, authed...))
 	mux.Handle("POST /api/ai/agent-edit", chain(d.handleAIAgentEdit, authed...))
 	mux.Handle("POST /api/ai/optimize-question", chain(d.handleAIOptimize, authed...))
 	mux.Handle("POST /api/ai/summarize-answers", chain(d.handleAISummarize, authed...))
@@ -137,6 +151,8 @@ func Pages(webFS fs.FS) http.Handler {
 			file = "about.html"
 		case p == "/console":
 			file = "console.html"
+		case p == "/banks":
+			file = "banks.html"
 		case p == "/admin", p == "/admin/settings":
 			if p == "/admin/settings" {
 				http.Redirect(w, r, "/admin", http.StatusFound)

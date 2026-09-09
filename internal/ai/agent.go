@@ -8,6 +8,7 @@ import (
 
 	"panda-survey/internal/model"
 	"panda-survey/internal/registry"
+	"panda-survey/internal/service"
 )
 
 const agentSystemPrompt = `你是问卷编辑助手，帮助用户修改问卷。你只能通过调用工具修改问卷，禁止直接输出问卷内容。
@@ -125,6 +126,9 @@ func RunAgentEdit(ctx context.Context, c *Client, survey model.Survey,
 		return nil, fmt.Errorf("指令不超过 2000 字")
 	}
 	overview := fmt.Sprintf("当前问卷：%s\n描述：%s\n题目列表：\n", survey.Title, survey.Description)
+	if survey.Kind == model.KindQuiz {
+		overview += "（本卷为答题卷：题型仅限 single_choice / multiple_choice / dropdown / text；每题 config 必须带分值 score 与正确答案 correct —— 单选/下拉 correct 为选项 id，多选为 id 数组，填空为可接受文本数组）\n"
+	}
 	for i, q := range questions {
 		overview += fmt.Sprintf("%d. [%s] %s\n", i+1, q.Type, q.Title)
 	}
@@ -190,6 +194,14 @@ func RunAgentEdit(ctx context.Context, c *Client, survey model.Survey,
 		}
 		if err := a.ParseConfig(q.Config); err != nil {
 			return nil, fmt.Errorf("修改后的第 %d 题（%s）: %v", i+1, a.Label(), err)
+		}
+		// 答题卷：强制题型与正确答案/分值规则（与服务端保存校验一致）
+		if survey.Kind == model.KindQuiz {
+			cfg := q.Config
+			if err := service.ValidateQuizQuestion(q.Type, q.Title, &cfg); err != nil {
+				return nil, fmt.Errorf("修改后的第 %d 题: %v", i+1, err)
+			}
+			q.Config = cfg
 		}
 	}
 	if result.Summary == "" && len(result.Steps) > 0 {

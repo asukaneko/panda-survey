@@ -7,6 +7,7 @@ import (
 
 	"panda-survey/internal/ai"
 	"panda-survey/internal/middleware"
+	"panda-survey/internal/model"
 	"panda-survey/internal/templates"
 )
 
@@ -38,12 +39,12 @@ func (d *Deps) handleCreateFromTemplate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	uid := middleware.User(r).UserID
-	s, err := d.Surveys.Create(uid, tpl.Name, tpl.Description)
+	s, err := d.Surveys.Create(uid, tpl.Name, tpl.Description, model.KindSurvey)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, 1, err.Error())
 		return
 	}
-	err = d.SurveySvc.ValidateAndSave(s.ID, uid, tpl.Name, tpl.Description, tpl.Questions, s.UpdatedAt)
+	err = d.SurveySvc.ValidateAndSave(s.ID, uid, tpl.Name, tpl.Description, tpl.Questions, nil, s.UpdatedAt)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, 1, err.Error())
 		return
@@ -101,11 +102,17 @@ func (d *Deps) handleSharedStats(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, 1, err.Error())
 		return
 	}
-	ok(w, map[string]any{
-		"survey":    map[string]any{"title": s.Title, "description": s.Description},
+	data := map[string]any{
+		"survey":    map[string]any{"title": s.Title, "description": s.Description, "kind": s.Kind},
 		"total":     total,
 		"questions": stats,
-	})
+	}
+	if s.Kind == model.KindQuiz {
+		if avg, err := d.StatsSvc.AvgScore(s.ID); err == nil {
+			data["avg_score"] = avg
+		}
+	}
+	ok(w, data)
 }
 
 /* ---- AI 摘要 ---- */

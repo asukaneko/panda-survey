@@ -84,6 +84,33 @@ CREATE INDEX idx_ai_usage_user    ON ai_usage(user_id, created_at);
 `,
 	// v2：统计只读分享令牌
 	`ALTER TABLE surveys ADD COLUMN share_token TEXT`,
+	// v3：答题类型（kind）、答题配置、答卷得分/个人信息、题库
+	`
+ALTER TABLE surveys ADD COLUMN kind INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE surveys ADD COLUMN quiz_config TEXT NOT NULL DEFAULT '';
+ALTER TABLE responses ADD COLUMN profile TEXT NOT NULL DEFAULT '';
+ALTER TABLE responses ADD COLUMN score INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE question_banks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
+);
+CREATE TABLE bank_questions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    bank_id     INTEGER NOT NULL REFERENCES question_banks(id) ON DELETE CASCADE,
+    type        TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    required    INTEGER NOT NULL DEFAULT 1,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    config      TEXT NOT NULL DEFAULT '{}',
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX idx_banks_user         ON question_banks(user_id);
+CREATE INDEX idx_bank_questions_bank ON bank_questions(bank_id, sort_order);
+`,
 }
 
 // Open 打开 SQLite 并执行迁移。时间统一由应用层写入 UTC RFC3339 文本。
