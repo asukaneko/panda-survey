@@ -287,7 +287,6 @@ function bootQuiz(data) {
     left: (cfg.duration_min || 0) * 60,
     timerId: null,
     userAnswers: null,
-    sheetShown: false, // 分页模式答完最后一题后展示题号答题卡
   };
   widgets.forEach((it) => {
     it.w.onChange = () => updateQuizSheet();
@@ -298,6 +297,7 @@ function bootQuiz(data) {
 function renderQuizIntro() {
   document.getElementById('questions').textContent = '';
   document.getElementById('actions').textContent = '';
+  hideQuizSide(); // 未开始答题时不显示答题卡侧栏
   const intro = document.getElementById('quizIntro');
   intro.style.display = '';
   intro.textContent = '';
@@ -388,6 +388,7 @@ function startQuiz() {
   if (quiz.cfg.duration_min > 0 && !isPreview) {
     const bar = document.getElementById('timerBar');
     bar.style.display = '';
+    document.body.classList.add('quiz-timed'); // 答题卡吸顶位置让开计时条
     renderTimer();
     quiz.timerId = setInterval(() => {
       quiz.left--;
@@ -427,10 +428,6 @@ function renderQuizQuestions() {
   const isPaged = quiz.cfg.display_mode === 'paged';
   if (isPaged) {
     const perQ = isPerQ(); // 「提交后展示答案」= 逐题提交模式（仅分页 + 非预览）
-    // 答完最后一题后展示题号答题卡（已提交/未提交标记，可点击跳转）
-    if (quiz.cur === widgets.length - 1) {
-      quiz.sheetShown = true;
-    }
     const it = widgets[quiz.cur];
     box.appendChild(it.w.root);
     it.w.root.style.display = '';
@@ -440,9 +437,7 @@ function renderQuizQuestions() {
         box.appendChild(renderFeedback(it));
       }
     }
-    if (quiz.sheetShown) {
-      box.appendChild(renderQuizSheet());
-    }
+    renderQuizSide(); // 侧栏答题卡：竖排题号，作答期间一直显示
     const nav = document.createElement('div');
     nav.className = 'page-nav';
     const prev = document.createElement('button');
@@ -505,8 +500,8 @@ function renderQuizQuestions() {
         subRow.appendChild(finish);
       } else {
         const hint = document.createElement('div');
-        hint.className = 'quiz-sheet-label';
-        hint.textContent = '还有 ' + widgets.filter((w) => !w.locked).length + ' 题未提交，可点击上方题号跳转补答';
+        hint.className = 'quiz-submit-hint';
+        hint.textContent = '还有 ' + widgets.filter((w) => !w.locked).length + ' 题未提交，可点击右侧答题卡跳转补答';
         subRow.appendChild(hint);
       }
     }
@@ -515,7 +510,9 @@ function renderQuizQuestions() {
     }
     return;
   }
+  renderQuizSide(); // 列表展示同样常显侧栏答题卡（点击题号滚动定位）
   widgets.forEach((it) => box.appendChild(it.w.root));
+  bindQuizScrollSpy();
   if (!isPreview) {
     const btn = document.createElement('button');
     btn.className = 'btn btn-primary btn-lg';
@@ -528,7 +525,8 @@ function renderQuizQuestions() {
 
 // 逐题提交模式（展示答案）：仅分页展示 + 非预览
 function isPerQ() {
-  return !isPreview && !!quiz && !!quiz.cfg && !!quiz.cfg.show_answer;
+  return !isPreview && !!quiz && !!quiz.cfg && !!quiz.cfg.show_answer
+    && quiz.cfg.display_mode === 'paged';
 }
 
 function allLocked() {
@@ -540,59 +538,183 @@ function sheetDone(it) {
   return isPerQ() ? !!it.locked : !!it.w.collect();
 }
 
-function sheetLabelText() {
-  const done = isPerQ() ? '已提交' : '已答';
-  return '答题卡：' + done + ' ' + widgets.filter(sheetDone).length + ' / ' + widgets.length + ' 题，点击题号可跳转';
+function sheetMarkText(done) {
+  if (isPerQ()) {
+    return done ? '（已提交）' : '（未提交）';
+  }
+  return done ? '（已答）' : '（未答）';
 }
 
-// 分页模式答题卡（题号提单）：已提交/已答标记，点击题号跳转到对应题目
-function renderQuizSheet() {
-  const perQ = isPerQ();
-  const sheet = document.createElement('div');
-  sheet.className = 'quiz-sheet';
-  const label = document.createElement('div');
-  label.className = 'quiz-sheet-label';
-  label.textContent = sheetLabelText();
-  sheet.appendChild(label);
+function sheetCountText() {
+  return widgets.filter(sheetDone).length + '/' + widgets.length;
+}
+
+// 逐题提交（提交后展示答案）时该题已判分则返回对错，否则 null
+function numVerdict(it) {
+  if (isPerQ() && it.locked && it.feedback) {
+    return it.feedback.correct;
+  }
+  return null;
+}
+
+// 题号样式：逐题提交模式按本题对错着色（绿=正确、红=错误），其余为已答/已提交
+function numClass(it, i) {
+  let cls = 'quiz-side-num';
+  const verdict = numVerdict(it);
+  if (verdict === true) {
+    cls += ' ok';
+  } else if (verdict === false) {
+    cls += ' bad';
+  } else if (sheetDone(it)) {
+    cls += ' done';
+  }
+  if (i === quiz.cur) {
+    cls += ' cur';
+  }
+  return cls;
+}
+
+function numTitle(it, i) {
+  const verdict = numVerdict(it);
+  let mark;
+  if (verdict === true) {
+    mark = '（正确）';
+  } else if (verdict === false) {
+    mark = '（错误）';
+  } else {
+    mark = sheetMarkText(sheetDone(it));
+  }
+  return '第 ' + (i + 1) + ' 题' + mark;
+}
+
+// 答题卡（左侧，5 列题号），作答期间一直显示，点击题号跳题
+function renderQuizSide() {
+  const side = document.getElementById('quizSide');
+  if (!side) {
+    return;
+  }
+  side.style.display = '';
+  document.body.classList.add('quiz-has-sheet');
+  side.textContent = '';
+
+  const top = document.createElement('div');
+  top.className = 'quiz-side-top';
+  const head = document.createElement('div');
+  head.className = 'quiz-side-head';
+  head.textContent = '答题卡';
+  top.appendChild(head);
+  const cnt = document.createElement('div');
+  cnt.className = 'quiz-side-count';
+  cnt.title = isPerQ() ? '已提交 / 总题数' : '已答 / 总题数';
+  cnt.textContent = sheetCountText();
+  top.appendChild(cnt);
+  side.appendChild(top);
+
   const nums = document.createElement('div');
-  nums.className = 'quiz-sheet-nums';
+  nums.className = 'quiz-side-nums';
   widgets.forEach((it, i) => {
-    const done = sheetDone(it);
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'quiz-sheet-num' + (done ? ' done' : '') + (i === quiz.cur ? ' cur' : '');
+    b.className = numClass(it, i);
     b.textContent = i + 1;
-    b.title = '第 ' + (i + 1) + ' 题' + (done ? (perQ ? '（已提交）' : '（已答）') : (perQ ? '（未提交）' : '（未答）'));
+    b.title = numTitle(it, i);
     b.addEventListener('click', () => {
       quiz.cur = i;
-      renderQuizQuestions();
-      window.scrollTo({ top: 0 });
+      if (quiz.cfg.display_mode === 'paged') {
+        renderQuizQuestions();
+        window.scrollTo({ top: 0 });
+      } else {
+        // 列表展示：滚动定位到该题（留出倒计时条空间）
+        updateQuizSideCurrent();
+        const rect = it.w.root.getBoundingClientRect();
+        window.scrollTo({ top: Math.max(0, window.scrollY + rect.top - 72), behavior: 'smooth' });
+      }
     });
     nums.appendChild(b);
   });
-  sheet.appendChild(nums);
-  return sheet;
+  side.appendChild(nums);
+
+  // 题号多时把当前题号滚动到可视区中间
+  const cur = nums.querySelector('.quiz-side-num.cur');
+  if (cur && nums.scrollHeight > nums.clientHeight) {
+    nums.scrollTop = Math.max(0, cur.offsetTop - (nums.clientHeight - cur.offsetHeight) / 2);
+  }
+}
+
+function hideQuizSide() {
+  const side = document.getElementById('quizSide');
+  document.body.classList.remove('quiz-has-sheet');
+  document.body.classList.remove('quiz-timed');
+  if (side) {
+    side.style.display = 'none';
+    side.textContent = '';
+  }
+}
+
+// 仅刷新侧栏「当前题号」高亮
+function updateQuizSideCurrent() {
+  const nums = document.querySelectorAll('#quizSide .quiz-side-num');
+  nums.forEach((b, i) => b.classList.toggle('cur', i === quiz.cur));
+}
+
+// 列表展示：按滚动位置高亮侧栏当前题号（rAF 节流）
+let spyBound = false;
+let spyPending = false;
+
+function bindQuizScrollSpy() {
+  if (spyBound) {
+    return;
+  }
+  spyBound = true;
+  window.addEventListener('scroll', () => {
+    if (spyPending) {
+      return;
+    }
+    spyPending = true;
+    requestAnimationFrame(() => {
+      spyPending = false;
+      listScrollSpy();
+    });
+  }, { passive: true });
+}
+
+function listScrollSpy() {
+  if (!quiz || quiz.cfg.display_mode === 'paged' || widgets.length === 0) {
+    return;
+  }
+  const side = document.getElementById('quizSide');
+  if (!side || side.style.display === 'none') {
+    return;
+  }
+  let idx = 0;
+  widgets.forEach((it, i) => {
+    if (it.w.root.getBoundingClientRect().top <= 140) {
+      idx = i;
+    }
+  });
+  if (idx !== quiz.cur) {
+    quiz.cur = idx;
+    updateQuizSideCurrent();
+  }
 }
 
 // 作答变化时仅刷新答题卡标记，不重建页面（避免打断输入）
 function updateQuizSheet() {
-  const sheet = document.querySelector('#questions .quiz-sheet');
-  if (!sheet) {
+  const side = document.getElementById('quizSide');
+  if (!side || side.style.display === 'none') {
     return;
   }
-  const perQ = isPerQ();
-  const nums = sheet.querySelectorAll('.quiz-sheet-num');
+  const nums = side.querySelectorAll('.quiz-side-num');
   widgets.forEach((it, i) => {
     const b = nums[i];
     if (b) {
-      const done = sheetDone(it);
-      b.classList.toggle('done', done);
-      b.title = '第 ' + (i + 1) + ' 题' + (done ? (perQ ? '（已提交）' : '（已答）') : (perQ ? '（未提交）' : '（未答）'));
+      b.className = numClass(it, i);
+      b.title = numTitle(it, i);
     }
   });
-  const label = sheet.querySelector('.quiz-sheet-label');
-  if (label) {
-    label.textContent = sheetLabelText();
+  const cnt = side.querySelector('.quiz-side-count');
+  if (cnt) {
+    cnt.textContent = sheetCountText();
   }
 }
 
@@ -611,13 +733,14 @@ async function submitCurrent() {
     toast('请先作答再提交本题', true);
     return;
   }
-  // 先锁定，防止提交期间修改
+  // 先锁定，防止提交期间修改（判分返回前不写入 feedback，避免题号闪现错误色）
+  const mine = displayAnswer(it.q, got.value);
   it.locked = true;
+  it.feedback = null;
   it.w.root.classList.add('locked');
   it.w.root.querySelectorAll('input, select, textarea, button').forEach((el) => {
     el.disabled = true;
   });
-  it.feedback = { correct: false, awarded: 0, correct_data: null, mine: displayAnswer(it.q, got.value) };
   const btn = document.querySelector('#actions button.submit-quiz-btn');
   if (btn) {
     btn.disabled = true;
@@ -632,7 +755,7 @@ async function submitCurrent() {
       correct: !!res.correct,
       awarded: res.awarded || 0,
       correct_data: res.correct_data,
-      mine: it.feedback.mine,
+      mine,
     };
     renderQuizQuestions();
     const fb = document.querySelector('#questions .review-card');
@@ -786,6 +909,7 @@ function displayAnswer(q, value) {
 }
 
 function showQuizResult(res) {
+  hideQuizSide(); // 出成绩后收起答题卡侧栏
   document.getElementById('app').style.display = 'none';
   document.getElementById('timerBar').style.display = 'none';
   const box = document.getElementById('quizResult');

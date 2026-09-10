@@ -13,11 +13,17 @@
       <p id="sDesc"></p>
     </div>
     <div id="timerBar" class="timer-bar" style="display:none"></div>
-    <div id="quizIntro" style="display:none"></div>
-    <div class="fill-tipbar" id="tipBar"></div>
-    <div id="questions"></div>
-    <div class="fill-actions" id="actions">
-      <button class="btn btn-primary btn-lg" id="submitBtn">提 交</button>
+    <!-- 答题卡与题目同一行：左侧答题卡（5 列题号），右侧题目与操作 -->
+    <div class="fill-body" id="fillBody">
+      <aside class="quiz-side" id="quizSide" style="display:none"></aside>
+      <div class="fill-main" id="fillMain">
+        <div id="quizIntro" style="display:none"></div>
+        <div class="fill-tipbar" id="tipBar"></div>
+        <div id="questions"></div>
+        <div class="fill-actions" id="actions">
+          <button class="btn btn-primary btn-lg" id="submitBtn">提 交</button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="thanks" id="thanks" style="display:none">

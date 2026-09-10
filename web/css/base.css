@@ -306,6 +306,16 @@ textarea.input { min-height: 80px; resize: vertical; }
 /* ---------- 填答页 ---------- */
 
 .fill-wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
+/* 答题卷作答：标题与倒计时在上；下方一行 = 左侧答题卡（5 列题号）+ 右侧题目 */
+body.quiz-has-sheet #app { max-width: 976px; }
+.fill-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+}
+/* 答题卡与题目之间留出更大间距 */
+body.quiz-has-sheet .fill-body { gap: 30px; }
+.fill-main { flex: 1 1 auto; min-width: 0; }
 .fill-hero {
   text-align: center;
   padding: 28px 0 20px;
@@ -389,7 +399,11 @@ textarea.input { min-height: 80px; resize: vertical; }
   min-height: 46px;
   font-size: 16px;
 }
-.quiz-submit-row .quiz-sheet-label { text-align: center; }
+.quiz-submit-row .quiz-submit-hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+}
 
 /* 矩阵题 */
 .matrix-table { width: 100%; }
@@ -819,50 +833,88 @@ textarea.input { min-height: 80px; resize: vertical; }
 .bank-q-row:last-child { border-bottom: none; }
 .bank-q-row input { margin-top: 2px; }
 
-/* 分页模式答题卡（题号提单）：已答/未答标记，点击跳题 */
-.quiz-sheet {
-  margin: 12px 0 2px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+/* 答题卡（左侧，5 列题号）：作答期间一直显示，点击题号跳题 */
+.quiz-side {
+  flex: 0 0 auto;
+  position: sticky;
+  top: 12px;
+  width: 196px;
+  /* 电脑端高度上限：题号过多时改为面板内滚动，避免整列过长 */
+  max-height: 380px;
+  max-height: min(60vh, 380px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
   background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
 }
-.quiz-sheet-label {
+.quiz-side-top {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+.quiz-side-head {
   font-size: 12px;
   color: var(--text-3);
-  margin-bottom: 8px;
 }
-.quiz-sheet-nums {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.quiz-side-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
 }
-.quiz-sheet-num {
-  min-width: 36px;
-  height: 36px;
-  padding: 0 8px;
+.quiz-side-nums {
+  position: relative;
+  flex: 0 1 auto; /* 不撑高面板：仅在超过上限时收缩并内部滚动 */
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  align-content: start;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.quiz-side-num {
+  width: 100%;
+  height: 32px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--card);
   color: var(--text-2);
   font-size: 13px;
   font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   cursor: pointer;
   transition: all 0.15s;
 }
-.quiz-sheet-num:hover { border-color: var(--primary); color: var(--primary); }
-.quiz-sheet-num.done {
+.quiz-side-num:hover { border-color: var(--primary); color: var(--primary); }
+.quiz-side-num.done {
   background: var(--primary-light);
   border-color: var(--primary);
   color: var(--primary);
 }
-.quiz-sheet-num.cur {
+.quiz-side-num.cur {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px var(--primary-light);
+  color: var(--primary);
 }
+/* 逐题提交（提交后展示答案）：题号颜色跟随本题对错 */
+.quiz-side-num.ok {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.quiz-side-num.bad {
+  background: #fdf1f1;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+/* 有吸顶倒计时条时，答题卡吸顶位置下移让开 */
+body.quiz-timed .quiz-side { top: 60px; }
 
 /* 交卷后锁定作答控件，不可再修改 */
 .fill-card.locked input:disabled,
@@ -872,6 +924,24 @@ textarea.input { min-height: 80px; resize: vertical; }
   color: var(--text-2);
   cursor: not-allowed;
   opacity: 0.85;
+}
+
+/* 手机端：答题卡移到题目上方通栏（仍为 5 列题号），限高滚动，避免挤压题干 */
+@media (max-width: 767px) {
+  body.quiz-has-sheet .fill-body {
+    flex-direction: column;
+    align-items: stretch; /* 列方向下让题目通栏居中（否则按内容宽度左对齐） */
+    gap: 10px;
+  }
+  .quiz-side {
+    position: static;
+    width: 100%;
+    max-height: 30vh;
+    padding: 8px;
+    gap: 6px;
+  }
+  .quiz-side-nums { gap: 5px; }
+  .quiz-side-num { height: 30px; font-size: 12px; }
 }
 
 
