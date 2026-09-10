@@ -124,7 +124,8 @@ gzip -n -c inner.tar > pandasurvey-0.3.0-x86.fpk
 - [ ] 编译与全量测试通过：`go vet ./... && go test ./...`
 - [ ] 打包后 `--verify` 全部 PASS
 - [ ] 安装冒烟：fnOS 应用中心 → 手动安装 → 启动 → 注册首个管理员 → 建卷/发布/填答
-- [ ] （如对外分发）替换 `manifest` 中 maintainer/distributor 为自身信息
+- [ ] 核对 `manifest` 的 maintainer/distributor 与来源说明（本仓库已设为 `asukaneko`
+      / https://github.com/asukaneko/panda-survey，原作者 PanDa 保留在 desc 的来源说明中）
 
 ---
 
@@ -139,8 +140,10 @@ manifest 里的 `checksum` 必须与 `app.tgz` 同时更新——用脚本打包
 manifest 后重跑 `--verify` 会失败，重新打包即可。
 
 **Q：产物能直接装到别人的 fnOS 吗？**
-能（手动安装）。但 manifest 的 maintainer/来源默认仍是原作者 PanDa（www.aykeji.cn）；
-对外分发建议改为自己的信息，并注意不要冒用他人品牌。
+能（手动安装）。本仓库的 manifest 已把 maintainer/distributor 设为本项目维护者
+`asukaneko`（https://github.com/asukaneko/panda-survey），原作者 PanDa（www.aykeji.cn）
+保留在 `desc` 的来源与许可说明中；若你要基于本仓库再分发，请同样替换为自己的信息，
+并注意不要冒用他人品牌。
 
 **Q：想走作者官网自动更新通道？**
 做不到——更新检查硬编码请求 `https://www.aykeji.cn/api/app-update/pandasurvey`
