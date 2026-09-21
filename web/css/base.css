@@ -831,7 +831,36 @@ body.quiz-has-sheet .fill-body { gap: 30px; }
   cursor: pointer;
 }
 .bank-q-row:last-child { border-bottom: none; }
-.bank-q-row input { margin-top: 2px; }
+.bank-q-row input { margin-top: 2px; accent-color: var(--primary); flex: none; }
+
+/* 题库选题：全选工具条 */
+.bank-pick-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.bank-pick-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.bank-pick-all input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.bank-pick-count {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
 
 /* 答题卡（左侧，5 列题号）：作答期间一直显示，点击题号跳题 */
 .quiz-side {

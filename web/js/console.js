@@ -494,6 +494,27 @@ function elDiv(cls) {
 
 let bankQuestionsCache = []; // 当前所选题库的题目
 
+// 题库勾选框集合（仅当前所选题库的题目）
+function bankPickBoxes() {
+  return Array.from(document.querySelectorAll('#bankQuestionList input[type="checkbox"]'));
+}
+
+// 同步全选框（含半选态）与已选计数
+function syncBankPickState() {
+  const boxes = bankPickBoxes();
+  const picked = boxes.filter((b) => b.checked).length;
+  const all = $('bankSelectAll');
+  if (all) {
+    all.checked = boxes.length > 0 && picked === boxes.length;
+    all.indeterminate = picked > 0 && picked < boxes.length;
+    all.disabled = boxes.length === 0;
+  }
+  const cnt = $('bankPickCount');
+  if (cnt) {
+    cnt.textContent = '已选 ' + picked + ' / ' + boxes.length + ' 题';
+  }
+}
+
 async function openBankModal() {
   const sel = $('bankSelect');
   const list = $('bankQuestionList');
@@ -514,6 +535,7 @@ async function openBankModal() {
         textContent: '还没有题库，请先到「题库管理」创建并录入题目',
         style: 'color:var(--text-2);font-size:13px',
       }));
+      syncBankPickState();
       return;
     }
     banks.forEach((b) => {
@@ -526,6 +548,7 @@ async function openBankModal() {
   } catch (e) {
     list.innerHTML = '';
     list.appendChild(Object.assign(document.createElement('p'), { textContent: e.message }));
+    syncBankPickState();
   }
 }
 
@@ -552,6 +575,7 @@ async function loadBankQuestions(bankId) {
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.value = q.id;
+      cb.addEventListener('change', () => syncBankPickState());
       lab.appendChild(cb);
       const info = document.createElement('span');
       info.textContent = TYPE_LABEL[q.type] + ' · ' + (q.config.score || 1) + ' 分 · ' + q.title;
@@ -561,6 +585,8 @@ async function loadBankQuestions(bankId) {
   } catch (e) {
     list.innerHTML = '';
     list.appendChild(Object.assign(document.createElement('p'), { textContent: e.message }));
+  } finally {
+    syncBankPickState(); // 覆盖加载中/空题库/报错等所有分支
   }
 }
 
@@ -850,6 +876,13 @@ $('bankSelect').addEventListener('change', () => {
 });
 $('bankCancel').addEventListener('click', () => $('bankModal').classList.remove('open'));
 $('bankImport').addEventListener('click', importFromBank);
+$('bankSelectAll').addEventListener('change', () => {
+  const on = $('bankSelectAll').checked;
+  bankPickBoxes().forEach((b) => {
+    b.checked = on;
+  });
+  syncBankPickState();
+});
 $('logoutBtn').addEventListener('click', async () => {
   await api('/api/auth/logout', { method: 'POST', body: {} }).catch(() => {});
   location.href = '/login';
