@@ -70,11 +70,11 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, webFS fs.FS) {
 	mux.Handle("POST /api/surveys/{id}/stop", chain(d.handleStop, authed...))
 	mux.Handle("POST /api/surveys/{id}/copy", chain(d.handleCopy, authed...))
 
-	// 填答与统计
-	mux.Handle("GET /api/surveys/{id}/public", chain(d.handlePublicView, base...))
-	mux.Handle("POST /api/surveys/{id}/responses", chain(d.handleSubmit, base...))
-	mux.Handle("POST /api/surveys/{id}/grade-question", chain(d.handleGradeQuestion, base...))
-	mux.Handle("GET /api/surveys/{id}/leaderboard", chain(d.handleLeaderboard, base...))
+	// 填答（匿名，按公开令牌不可枚举）
+	mux.Handle("GET /api/s/{token}", chain(d.handlePublicView, base...))
+	mux.Handle("POST /api/s/{token}/responses", chain(d.handleSubmit, base...))
+	mux.Handle("POST /api/s/{token}/grade-question", chain(d.handleGradeQuestion, base...))
+	mux.Handle("GET /api/s/{token}/leaderboard", chain(d.handleLeaderboard, base...))
 	mux.Handle("GET /api/surveys/{id}/stats", chain(d.handleStats, authed...))
 	mux.Handle("GET /api/surveys/{id}/responses", chain(d.handleListResponses, authed...))
 	mux.Handle("GET /api/surveys/{id}/export", chain(d.handleExportCSV, authed...))
@@ -112,6 +112,9 @@ func RegisterRoutes(mux *http.ServeMux, d *Deps, webFS fs.FS) {
 	mux.Handle("POST /api/surveys/{id}/share-stats", chain(d.handleShareStats, authed...))
 	mux.Handle("DELETE /api/surveys/{id}/share-stats", chain(d.handleShareStats, authed...))
 	mux.Handle("GET /api/share/{token}/stats", chain(d.handleSharedStats, base...))
+
+	// 填答链接重置
+	mux.Handle("POST /api/surveys/{id}/reset-link", chain(d.handleResetPublicToken, authed...))
 
 	// AI 能力（需登录 + 配额）
 	mux.Handle("GET /api/ai/status", chain(d.handleAIStatus, authed...))

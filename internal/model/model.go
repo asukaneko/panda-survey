@@ -100,6 +100,7 @@ type Survey struct {
 	QuizConfig    QuizConfig `json:"quiz_config,omitempty"`
 	Deadline      string     `json:"deadline,omitempty"`
 	MaxResponses  *int64     `json:"max_responses,omitempty"`
+	PublicToken   string     `json:"public_token"`
 	CreatedAt     string     `json:"created_at"`
 	UpdatedAt     string     `json:"updated_at"`
 	ResponseCount int64      `json:"response_count"`

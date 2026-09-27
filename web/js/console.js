@@ -733,11 +733,10 @@ async function deleteSurvey() {
 /* ---------- 分享 ---------- */
 
 function shareURL() {
-  return location.origin + '/s/' + state.current.id;
+  return location.origin + '/s/' + state.current.public_token;
 }
 
-function openShare() {
-  $('shareLink').value = shareURL();
+function renderShareQR() {
   const box = $('qrBox');
   box.textContent = '';
   if (typeof QRCode !== 'undefined') {
@@ -753,6 +752,11 @@ function openShare() {
   } else {
     box.textContent = '二维码组件未安装，请复制链接分享';
   }
+}
+
+function openShare() {
+  $('shareLink').value = shareURL();
+  renderShareQR();
   // 统计只读分享：默认收起，点生成时再开通
   $('shareStatsRow').style.display = 'none';
   $('closeStatsShareBtn').style.display = 'none';
@@ -918,6 +922,20 @@ $('copyLinkBtn').addEventListener('click', async () => {
     $('shareLink').select();
     document.execCommand('copy');
     toast('链接已复制');
+  }
+});
+$('resetLinkBtn').addEventListener('click', async () => {
+  if (!confirm('重置后旧链接与旧二维码将立即失效，需要重新分享。确定重置？')) {
+    return;
+  }
+  try {
+    const res = await api('/api/surveys/' + state.current.id + '/reset-link', { method: 'POST', body: {} });
+    state.current.public_token = res.public_token;
+    $('shareLink').value = shareURL();
+    renderShareQR();
+    toast('填答链接已重置，请重新分享');
+  } catch (e) {
+    toast(e.message, true);
   }
 });
 $('genStatsShareBtn').addEventListener('click', async () => {

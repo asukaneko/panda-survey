@@ -1,13 +1,12 @@
 package handler
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"net/http"
 
 	"panda-survey/internal/ai"
 	"panda-survey/internal/middleware"
 	"panda-survey/internal/model"
+	"panda-survey/internal/store"
 	"panda-survey/internal/templates"
 )
 
@@ -55,12 +54,6 @@ func (d *Deps) handleCreateFromTemplate(w http.ResponseWriter, r *http.Request) 
 
 /* ---- 统计只读分享 ---- */
 
-func newShareToken() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
 // handleShareStats POST 生成/重置令牌；DELETE 关闭分享。
 func (d *Deps) handleShareStats(w http.ResponseWriter, r *http.Request) {
 	id, okID := d.surveyID(w, r)
@@ -70,7 +63,7 @@ func (d *Deps) handleShareStats(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.User(r).UserID
 	switch r.Method {
 	case http.MethodPost:
-		token := newShareToken()
+		token := store.NewToken()
 		if err := d.Surveys.SetShareToken(id, uid, token); err != nil {
 			mapErr(w, err)
 			return
@@ -83,6 +76,20 @@ func (d *Deps) handleShareStats(w http.ResponseWriter, r *http.Request) {
 		}
 		ok(w, nil)
 	}
+}
+
+// handleResetPublicToken 重置填答链接令牌：旧链接立即失效，返回新令牌。
+func (d *Deps) handleResetPublicToken(w http.ResponseWriter, r *http.Request) {
+	id, okID := d.surveyID(w, r)
+	if !okID {
+		return
+	}
+	token, err := d.Surveys.RotatePublicToken(id, middleware.User(r).UserID)
+	if err != nil {
+		mapErr(w, err)
+		return
+	}
+	ok(w, map[string]string{"public_token": token, "path": "/s/" + token})
 }
 
 // handleSharedStats 匿名只读统计（按令牌；不含明细与 IP）。

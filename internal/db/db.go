@@ -111,6 +111,12 @@ CREATE TABLE bank_questions (
 CREATE INDEX idx_banks_user         ON question_banks(user_id);
 CREATE INDEX idx_bank_questions_bank ON bank_questions(bank_id, sort_order);
 `,
+	// v4：填答链接公开令牌（随机不可枚举）
+	`
+ALTER TABLE surveys ADD COLUMN public_token TEXT NOT NULL DEFAULT '';
+UPDATE surveys SET public_token = lower(hex(randomblob(16))) WHERE public_token = '';
+CREATE UNIQUE INDEX idx_surveys_public_token ON surveys(public_token) WHERE public_token <> '';
+`,
 }
 
 // Open 打开 SQLite 并执行迁移。时间统一由应用层写入 UTC RFC3339 文本。

@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 type question struct {
@@ -32,6 +35,8 @@ type question struct {
 func main() {
 	base := flag.String("base", "http://localhost:43210", "服务地址")
 	surveyID := flag.Int64("survey", 0, "问卷 id（必填）")
+	token := flag.String("token", "", "填答令牌（留空则从数据库按 id 读取）")
+	dbPath := flag.String("db", "panda.db", "SQLite 数据库路径（用于读取填答令牌）")
 	n := flag.Int("n", 100, "提交份数")
 	seed := flag.Int64("seed", 42, "随机种子（固定可复现）")
 	interval := flag.Float64("interval", 6.2, "每份提交间隔秒数（低于服务限频每分钟 10 份时会被 429 拒绝）")
@@ -40,10 +45,18 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+	if *token == "" {
+		database, err := sql.Open("sqlite", "file:"+*dbPath+"?mode=ro")
+		must(err)
+		defer database.Close()
+		must(database.QueryRow(
+			`SELECT public_token FROM surveys WHERE id = ? AND deleted_at IS NULL`, *surveyID).Scan(token))
+	}
+	pubURL := fmt.Sprintf("%s/api/s/%s", *base, *token)
 	rng := rand.New(rand.NewSource(*seed))
 
 	// 拉取公开问卷
-	resp, err := http.Get(fmt.Sprintf("%s/api/surveys/%d/public", *base, *surveyID))
+	resp, err := http.Get(pubURL)
 	must(err)
 	defer resp.Body.Close()
 	var pub struct {
@@ -109,7 +122,7 @@ func main() {
 			}
 		}
 		body, _ := json.Marshal(map[string]any{"answers": answers, "duration": 30 + rng.Intn(120)})
-		req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/surveys/%d/responses", *base, *surveyID),
+		req, _ := http.NewRequest("POST", pubURL+"/responses",
 			bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)

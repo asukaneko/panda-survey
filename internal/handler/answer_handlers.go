@@ -13,18 +13,24 @@ import (
 	"panda-survey/internal/service"
 )
 
+// surveyByPublicToken 按填答链接令牌解析问卷；无效令牌统一 404 不泄露信息。
+func (d *Deps) surveyByPublicToken(w http.ResponseWriter, r *http.Request) (*model.Survey, bool) {
+	s, err := d.Surveys.GetByPublicToken(r.PathValue("token"))
+	if err != nil {
+		fail(w, http.StatusNotFound, 1008, "链接无效或已失效")
+		return nil, false
+	}
+	return s, true
+}
+
 // handlePublicView 填答端问卷视图：仅发布中可见，只回题目不回统计。
 // 答题卷额外回 quiz_config，并剥离题目正确答案（不泄露给填写端）。
 func (d *Deps) handlePublicView(w http.ResponseWriter, r *http.Request) {
-	id, okID := d.surveyID(w, r)
-	if !okID {
+	s, okS := d.surveyByPublicToken(w, r)
+	if !okS {
 		return
 	}
-	s, err := d.Surveys.Get(id)
-	if err != nil {
-		mapErr(w, err)
-		return
-	}
+	id := s.ID
 	switch s.Status {
 	case 0:
 		fail(w, http.StatusNotFound, 1008, "问卷尚未发布")
@@ -63,8 +69,8 @@ type submitReq struct {
 // handleSubmit 匿名提交答卷：限频 + 逐题校验 + 事务落库。
 // 答题卷（kind=1）服务端判分并返回成绩；show_answer 时附答案与逐题对错。
 func (d *Deps) handleSubmit(w http.ResponseWriter, r *http.Request) {
-	id, okID := d.surveyID(w, r)
-	if !okID {
+	s, okS := d.surveyByPublicToken(w, r)
+	if !okS {
 		return
 	}
 	ip := middleware.ClientIP(r)
@@ -74,11 +80,6 @@ func (d *Deps) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	var req submitReq
 	if !readJSON(w, r, &req) {
-		return
-	}
-	s, err := d.Surveys.Get(id)
-	if err != nil {
-		mapErr(w, err)
 		return
 	}
 	if req.Answers == nil {
@@ -110,13 +111,8 @@ func (d *Deps) handleSubmit(w http.ResponseWriter, r *http.Request) {
 // 公开端点，仅发布中的答题卷 + 开启 show_answer + 分页展示时可用；
 // 只返回本题对错/本题得分/正确答案，不落库，整卷成绩由最终交卷统一保存。
 func (d *Deps) handleGradeQuestion(w http.ResponseWriter, r *http.Request) {
-	id, okID := d.surveyID(w, r)
-	if !okID {
-		return
-	}
-	s, err := d.Surveys.Get(id)
-	if err != nil {
-		mapErr(w, err)
+	s, okS := d.surveyByPublicToken(w, r)
+	if !okS {
 		return
 	}
 	if s.Kind != model.KindQuiz || !s.QuizConfig.ShowAnswer || s.QuizConfig.DisplayMode != "paged" {
@@ -154,13 +150,8 @@ func (d *Deps) handleGradeQuestion(w http.ResponseWriter, r *http.Request) {
 
 // handleLeaderboard 答题卷排行榜（公开）：仅发布中的答题卷且开启 show_ranking 时可见。
 func (d *Deps) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
-	id, okID := d.surveyID(w, r)
-	if !okID {
-		return
-	}
-	s, err := d.Surveys.Get(id)
-	if err != nil {
-		mapErr(w, err)
+	s, okS := d.surveyByPublicToken(w, r)
+	if !okS {
 		return
 	}
 	if s.Kind != model.KindQuiz || !s.QuizConfig.ShowRanking {
@@ -171,7 +162,7 @@ func (d *Deps) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, 1008, "答题已结束")
 		return
 	}
-	rows, err := d.Responses.Leaderboard(id, 50)
+	rows, err := d.Responses.Leaderboard(s.ID, 50)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, 1, err.Error())
 		return

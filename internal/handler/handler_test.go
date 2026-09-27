@@ -167,6 +167,8 @@ func TestFullFlow(t *testing.T) {
 	survey := dataMap(m)
 	sid := fmt.Sprintf("%.0f", survey["id"].(float64))
 	updatedAt := survey["updated_at"].(string)
+	pubToken := survey["public_token"].(string)
+	pubBase := "/api/s/" + pubToken
 
 	// 保存六种题型（乐观锁携带 updated_at）
 	st, m = e.do(admin, "PUT", "/api/surveys/"+sid, map[string]any{
@@ -184,7 +186,7 @@ func TestFullFlow(t *testing.T) {
 
 	// 匿名获取公开视图
 	anon := e.newClient()
-	st, m = e.do(anon, "GET", "/api/surveys/"+sid+"/public", nil)
+	st, m = e.do(anon, "GET", pubBase, nil)
 	if st != 200 || code(m) != 0 {
 		t.Fatalf("公开视图失败: %v", m)
 	}
@@ -196,7 +198,7 @@ func TestFullFlow(t *testing.T) {
 
 	// 提交合法答卷
 	submit := func() (int, map[string]any) {
-		return e.do(anon, "POST", "/api/surveys/"+sid+"/responses", map[string]any{
+		return e.do(anon, "POST", pubBase+"/responses", map[string]any{
 			"duration": 42,
 			"answers": []map[string]any{
 				{"question_id": qid(questions, 1), "value": "o1"},
@@ -284,7 +286,7 @@ func TestFullFlow(t *testing.T) {
 	}
 
 	// 已停止问卷不能再提交
-	st, m = e.do(anon, "GET", "/api/surveys/"+sid+"/public", nil)
+	st, m = e.do(anon, "GET", pubBase, nil)
 	if st != 404 {
 		t.Fatalf("已停止问卷公开视图应 404: %v", m)
 	}
@@ -376,6 +378,71 @@ func min(a, b int) int {
 	return b
 }
 
+// TestPublicTokenProtection 填答链接防枚举：随机令牌、数字 id 失效、可重置、越权重置被拒
+func TestPublicTokenProtection(t *testing.T) {
+	e := newTestEnv(t)
+	admin := registerAndLogin(e, "tokenadmin")
+
+	st, m := e.do(admin, "POST", "/api/surveys", map[string]string{"title": "令牌问卷"})
+	if st != 200 {
+		t.Fatalf("创建问卷失败: %v", m)
+	}
+	created := dataMap(m)
+	sid := fmt.Sprintf("%.0f", created["id"].(float64))
+	token := created["public_token"].(string)
+	if token == "" || token == sid {
+		t.Fatalf("应生成与 id 无关的随机令牌: %q", token)
+	}
+	// 第二份问卷令牌应不同
+	st, m = e.do(admin, "POST", "/api/surveys", map[string]string{"title": "令牌问卷2"})
+	if dataMap(m)["public_token"].(string) == token {
+		t.Fatal("不同问卷的公开令牌不应相同")
+	}
+
+	st, m = e.do(admin, "PUT", "/api/surveys/"+sid, map[string]any{
+		"title": "令牌问卷", "updated_at": created["updated_at"], "questions": sixQuestions()[:1],
+	})
+	if st != 200 {
+		t.Fatalf("保存失败: %v", m)
+	}
+	e.do(admin, "POST", "/api/surveys/"+sid+"/publish", map[string]any{})
+
+	anon := e.newClient()
+	// 数字 id 不再暴露匿名接口
+	if st, _ := e.do(anon, "GET", "/api/surveys/"+sid+"/public", nil); st != 404 {
+		t.Fatalf("数字 id 公开接口应 404: %d", st)
+	}
+	if st, _ := e.do(anon, "GET", "/api/s/no-such-token", nil); st != 404 {
+		t.Fatalf("无效令牌应 404: %d", st)
+	}
+	st, m = e.do(anon, "GET", "/api/s/"+token, nil)
+	if st != 200 || code(m) != 0 {
+		t.Fatalf("令牌公开视图失败: %v", m)
+	}
+
+	// 重置：旧令牌失效，新令牌可用
+	st, m = e.do(admin, "POST", "/api/surveys/"+sid+"/reset-link", map[string]any{})
+	if st != 200 {
+		t.Fatalf("重置链接失败: %v", m)
+	}
+	newToken := dataMap(m)["public_token"].(string)
+	if newToken == "" || newToken == token {
+		t.Fatalf("重置后应换新令牌: %q -> %q", token, newToken)
+	}
+	if st, _ := e.do(anon, "GET", "/api/s/"+token, nil); st != 404 {
+		t.Fatalf("旧令牌应失效: %d", st)
+	}
+	if st, _ := e.do(anon, "GET", "/api/s/"+newToken, nil); st != 200 {
+		t.Fatalf("新令牌应可用: %d", st)
+	}
+
+	// 越权重置他人链接
+	other := registerAndLogin(e, "tokenother")
+	if st, _ := e.do(other, "POST", "/api/surveys/"+sid+"/reset-link", map[string]any{}); st != 403 {
+		t.Fatalf("越权重置应 403: %d", st)
+	}
+}
+
 // TestReverseCases 反向用例：重复注册/错误密码/未登录/越权/非法答案/CSRF
 func TestReverseCases(t *testing.T) {
 	e := newTestEnv(t)
@@ -403,6 +470,7 @@ func TestReverseCases(t *testing.T) {
 	// 建卷发布
 	st, m = e.do(admin, "POST", "/api/surveys", map[string]string{"title": "T1"})
 	sid := fmt.Sprintf("%.0f", dataMap(m)["id"].(float64))
+	pubBase := "/api/s/" + dataMap(m)["public_token"].(string)
 	e.do(admin, "PUT", "/api/surveys/"+sid, map[string]any{
 		"title": "T1", "questions": sixQuestions()[:1], "updated_at": dataMap(m)["updated_at"],
 	})
@@ -425,15 +493,15 @@ func TestReverseCases(t *testing.T) {
 
 	// 非法答案：不存在的选项 / 缺必答 / 评分越界
 	anon := e.newClient()
-	st, m = e.do(anon, "GET", "/api/surveys/"+sid+"/public", nil)
+	st, m = e.do(anon, "GET", pubBase, nil)
 	qs := dataMap(m)["questions"].([]any)
-	st, m = e.do(anon, "POST", "/api/surveys/"+sid+"/responses", map[string]any{
+	st, m = e.do(anon, "POST", pubBase+"/responses", map[string]any{
 		"answers": []map[string]any{{"question_id": qid(qs, 1), "value": "oX"}},
 	})
 	if st != 400 || code(m) != 1001 {
 		t.Fatalf("非法选项应 1001: %v", m)
 	}
-	st, m = e.do(anon, "POST", "/api/surveys/"+sid+"/responses", map[string]any{"answers": []map[string]any{}})
+	st, m = e.do(anon, "POST", pubBase+"/responses", map[string]any{"answers": []map[string]any{}})
 	if st != 400 {
 		t.Fatalf("缺必答应 400: %v", m)
 	}
@@ -587,6 +655,7 @@ func TestPhase2Features(t *testing.T) {
 		t.Fatalf("模板创建失败: %v", m)
 	}
 	sid := fmt.Sprintf("%.0f", dataMap(m)["id"].(float64))
+	pubBase := "/api/s/" + dataMap(m)["public_token"].(string)
 	st, m = e.do(admin, "GET", "/api/surveys/"+sid, nil)
 	qs := dataMap(m)["questions"].([]any)
 	if len(qs) != 5 {
@@ -595,7 +664,7 @@ func TestPhase2Features(t *testing.T) {
 
 	// 2. 发布并提交含矩阵/排序/日期的答卷
 	e.do(admin, "POST", "/api/surveys/"+sid+"/publish", map[string]any{})
-	st, m = e.do(e.newClient(), "GET", "/api/surveys/"+sid+"/public", nil)
+	st, m = e.do(e.newClient(), "GET", pubBase, nil)
 	pubQs := dataMap(m)["questions"].([]any)
 	qidByOrder := func(order float64) float64 {
 		for _, q := range pubQs {
@@ -606,7 +675,7 @@ func TestPhase2Features(t *testing.T) {
 		}
 		return 0
 	}
-	e.do(e.newClient(), "POST", "/api/surveys/"+sid+"/responses", map[string]any{
+	e.do(e.newClient(), "POST", pubBase+"/responses", map[string]any{
 		"answers": []map[string]any{
 			{"question_id": qidByOrder(1), "value": "o1"},
 			{"question_id": qidByOrder(2), "value": []string{"o1"}},
@@ -632,6 +701,7 @@ func TestPhase2Features(t *testing.T) {
 	// 3. 逻辑跳转：第 1 题单选，第 2 题依赖第 1 题选 o2 才显示（必答）
 	st, m = e.do(admin, "POST", "/api/surveys", map[string]string{"title": "跳转测试"})
 	sid2 := fmt.Sprintf("%.0f", dataMap(m)["id"].(float64))
+	pubBase2 := "/api/s/" + dataMap(m)["public_token"].(string)
 	ua := dataMap(m)["updated_at"].(string)
 	condQuestions := []map[string]any{
 		{"type": "single_choice", "title": "是否继续", "required": true,
@@ -648,26 +718,26 @@ func TestPhase2Features(t *testing.T) {
 	}
 	// 保存带分页标记的 config 校验
 	e.do(admin, "POST", "/api/surveys/"+sid2+"/publish", map[string]any{})
-	st, m = e.do(e.newClient(), "GET", "/api/surveys/"+sid2+"/public", nil)
+	st, m = e.do(e.newClient(), "GET", pubBase2, nil)
 	pubQs2 := dataMap(m)["questions"].([]any)
 	q1 := qidByOrderIn(pubQs2, 1)
 	q2 := qidByOrderIn(pubQs2, 2)
 	// 选 o1：隐藏题不答 -> 通过
-	st, m = e.do(e.newClient(), "POST", "/api/surveys/"+sid2+"/responses", map[string]any{
+	st, m = e.do(e.newClient(), "POST", pubBase2+"/responses", map[string]any{
 		"answers": []map[string]any{{"question_id": q1, "value": "o1"}},
 	})
 	if st != 200 {
 		t.Fatalf("条件隐藏的必答不应校验: %v", m)
 	}
 	// 选 o2：隐藏题显示且必答 -> 不答报错
-	st, m = e.do(e.newClient(), "POST", "/api/surveys/"+sid2+"/responses", map[string]any{
+	st, m = e.do(e.newClient(), "POST", pubBase2+"/responses", map[string]any{
 		"answers": []map[string]any{{"question_id": q1, "value": "o2"}},
 	})
 	if st != 400 {
 		t.Fatalf("条件显示的必答缺失应报错: %v", m)
 	}
 	// 选 o2 + 答 -> 通过
-	st, m = e.do(e.newClient(), "POST", "/api/surveys/"+sid2+"/responses", map[string]any{
+	st, m = e.do(e.newClient(), "POST", pubBase2+"/responses", map[string]any{
 		"answers": []map[string]any{
 			{"question_id": q1, "value": "o2"},
 			{"question_id": q2, "value": "太贵了"},

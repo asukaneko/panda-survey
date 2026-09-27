@@ -114,6 +114,7 @@ func TestQuizFullFlow(t *testing.T) {
 		t.Fatalf("kind 应为 1: %v", quiz)
 	}
 	sid := fmt.Sprintf("%.0f", quiz["id"].(float64))
+	pubBase := "/api/s/" + quiz["public_token"].(string)
 
 	st, m = e.do(admin, "PUT", "/api/surveys/"+sid, map[string]any{
 		"title": "常识测验", "description": "测一测",
@@ -170,7 +171,7 @@ func TestQuizFullFlow(t *testing.T) {
 
 	// ---- 公开视图：不含正确答案、含 quiz_config ----
 	anon := e.newClient()
-	st, m = e.do(anon, "GET", "/api/surveys/"+sid+"/public", nil)
+	st, m = e.do(anon, "GET", pubBase, nil)
 	if st != 200 {
 		t.Fatalf("公开视图失败: %v", m)
 	}
@@ -192,7 +193,7 @@ func TestQuizFullFlow(t *testing.T) {
 
 	// ---- 逐题提交判分（展示答案模式）：每题判分并回传正确答案，不落库 ----
 	gradeQuiz := func(q float64, value any) (int, map[string]any) {
-		return e.do(anon, "POST", "/api/surveys/"+sid+"/grade-question", map[string]any{
+		return e.do(anon, "POST", pubBase+"/grade-question", map[string]any{
 			"question_id": q, "value": value,
 		})
 	}
@@ -239,7 +240,7 @@ func TestQuizFullFlow(t *testing.T) {
 
 	// ---- 提交判分 ----
 	submitQuiz := func(answers []map[string]any, profile []map[string]any) (int, map[string]any) {
-		return e.do(anon, "POST", "/api/surveys/"+sid+"/responses", map[string]any{
+		return e.do(anon, "POST", pubBase+"/responses", map[string]any{
 			"answers": answers, "profile": profile, "duration": 60,
 		})
 	}
@@ -290,7 +291,7 @@ func TestQuizFullFlow(t *testing.T) {
 	}
 
 	// ---- 排行榜：默认关闭 ----
-	st, m = e.do(anon, "GET", "/api/surveys/"+sid+"/leaderboard", nil)
+	st, m = e.do(anon, "GET", pubBase+"/leaderboard", nil)
 	if st != 404 {
 		t.Fatalf("未开启排行榜应 404: %v", m)
 	}
@@ -319,7 +320,7 @@ func TestQuizFullFlow(t *testing.T) {
 		t.Fatalf("show_answer=false 不应返回逐题结果: %v", rd)
 	}
 	// 关闭展示答案后逐题提交应 404
-	st, m = e.do(anon, "POST", "/api/surveys/"+sid+"/grade-question", map[string]any{
+	st, m = e.do(anon, "POST", pubBase+"/grade-question", map[string]any{
 		"question_id": qid(pubQs, 1), "value": "o1",
 	})
 	if st != 404 {
@@ -327,7 +328,7 @@ func TestQuizFullFlow(t *testing.T) {
 	}
 
 	// 排行榜：得分降序，姓名取个人信息
-	st, m = e.do(anon, "GET", "/api/surveys/"+sid+"/leaderboard", nil)
+	st, m = e.do(anon, "GET", pubBase+"/leaderboard", nil)
 	if st != 200 {
 		t.Fatalf("排行榜失败: %v", m)
 	}

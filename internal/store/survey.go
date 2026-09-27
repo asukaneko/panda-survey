@@ -1,7 +1,9 @@
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -16,7 +18,7 @@ var (
 	ErrState     = errors.New("问卷当前状态不允许该操作")
 )
 
-const surveyCols = `id, user_id, title, description, status, kind, quiz_config, deadline, max_responses, created_at, updated_at`
+const surveyCols = `id, user_id, title, description, status, kind, quiz_config, deadline, max_responses, public_token, created_at, updated_at`
 
 type SurveyStore struct{ DB *sql.DB }
 
@@ -24,7 +26,7 @@ func scanSurvey(row interface{ Scan(...any) error }) (*model.Survey, error) {
 	var s model.Survey
 	var deadline, maxResp sql.NullString
 	var quizCfg string
-	err := row.Scan(&s.ID, &s.UserID, &s.Title, &s.Description, &s.Status, &s.Kind, &quizCfg, &deadline, &maxResp, &s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.UserID, &s.Title, &s.Description, &s.Status, &s.Kind, &quizCfg, &deadline, &maxResp, &s.PublicToken, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -57,8 +59,8 @@ func (st *SurveyStore) Create(userID int64, title, description string, kind int)
 	}
 	now := model.NowUTC()
 	res, err := st.DB.Exec(
-		`INSERT INTO surveys(user_id, title, description, status, kind, quiz_config, created_at, updated_at) VALUES (?,?,?,0,?,?,?,?)`,
-		userID, title, description, kind, "{}", now, now)
+		`INSERT INTO surveys(user_id, title, description, status, kind, quiz_config, public_token, created_at, updated_at) VALUES (?,?,?,0,?,?,?,?,?)`,
+		userID, title, description, kind, "{}", NewToken(), now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +89,7 @@ func (st *SurveyStore) GetOwned(id, userID int64) (*model.Survey, error) {
 func (st *SurveyStore) List(userID int64) ([]model.Survey, error) {
 	rows, err := st.DB.Query(`
 		SELECT s.id, s.user_id, s.title, s.description, s.status, s.kind, s.quiz_config, s.deadline, s.max_responses,
-		       s.created_at, s.updated_at,
+		       s.public_token, s.created_at, s.updated_at,
 		       (SELECT COUNT(*) FROM responses r WHERE r.survey_id = s.id) AS rc
 		FROM surveys s
 		WHERE s.user_id = ? AND s.deleted_at IS NULL
@@ -102,7 +104,7 @@ func (st *SurveyStore) List(userID int64) ([]model.Survey, error) {
 		var deadline, maxResp sql.NullString
 		var quizCfg string
 		if err := rows.Scan(&s.ID, &s.UserID, &s.Title, &s.Description, &s.Status, &s.Kind, &quizCfg, &deadline, &maxResp,
-			&s.CreatedAt, &s.UpdatedAt, &s.ResponseCount); err != nil {
+			&s.PublicToken, &s.CreatedAt, &s.UpdatedAt, &s.ResponseCount); err != nil {
 			return nil, err
 		}
 		if s.Kind != model.KindQuiz {
@@ -341,8 +343,8 @@ func (st *SurveyStore) Copy(surveyID, userID int64) (*model.Survey, error) {
 		}
 	}
 	res, err := st.DB.Exec(
-		`INSERT INTO surveys(user_id, title, description, status, kind, quiz_config, created_at, updated_at) VALUES (?,?,?,0,?,?,?,?)`,
-		userID, title, src.Description, src.Kind, quizJSON, now, now)
+		`INSERT INTO surveys(user_id, title, description, status, kind, quiz_config, public_token, created_at, updated_at) VALUES (?,?,?,0,?,?,?,?,?)`,
+		userID, title, src.Description, src.Kind, quizJSON, NewToken(), now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -423,4 +425,35 @@ func (st *SurveyStore) SetShareToken(surveyID, userID int64, token string) error
 func (st *SurveyStore) GetByShareToken(token string) (*model.Survey, error) {
 	return scanSurvey(st.DB.QueryRow(
 		`SELECT `+surveyCols+` FROM surveys WHERE share_token = ? AND deleted_at IS NULL`, token))
+}
+
+// NewToken 生成 16 字节随机十六进制令牌（分享与填答链接共用）。
+func NewToken() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
+}
+
+// GetByPublicToken 按填答链接令牌取问卷。
+func (st *SurveyStore) GetByPublicToken(token string) (*model.Survey, error) {
+	if token == "" {
+		return nil, ErrNotFound
+	}
+	return scanSurvey(st.DB.QueryRow(
+		`SELECT `+surveyCols+` FROM surveys WHERE public_token = ? AND deleted_at IS NULL`, token))
+}
+
+// RotatePublicToken 重置填答链接令牌，旧链接立即失效；不推进 updated_at，避免误伤编辑乐观锁。
+func (st *SurveyStore) RotatePublicToken(surveyID, userID int64) (string, error) {
+	if _, err := st.GetOwned(surveyID, userID); err != nil {
+		return "", err
+	}
+	token := NewToken()
+	if _, err := st.DB.Exec(
+		`UPDATE surveys SET public_token = ? WHERE id = ? AND deleted_at IS NULL`, token, surveyID); err != nil {
+		return "", err
+	}
+	return token, nil
 }

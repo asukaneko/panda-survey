@@ -1,4 +1,4 @@
-// 填答页：/s/{id} 匿名填答；/preview/{id} 登录预览（提交禁用）
+// 填答页：/s/{token} 匿名填答（随机令牌，不可枚举）；/preview/{id} 登录预览（提交禁用）
 // 普通问卷：逻辑跳转（条件显隐）+ 分页（按「此后分页」标记逐页作答）
 // 答题卷（kind=1）：个人信息（可选）→ 倒计时 → 列表/分页作答 → 成绩 + 答案回顾（可选）+ 排行榜（可选）
 import { api, toast, fmtTime } from '/js/api.js';
@@ -6,8 +6,9 @@ import { renderFillQuestion } from '/js/renderers.js';
 
 const path = location.pathname;
 const isPreview = path.startsWith('/preview/');
-const m = path.match(/^\/(?:s|preview)\/(\d+)/);
-const surveyID = m ? m[1] : null;
+const m = path.match(/^\/(?:s|preview)\/([^/?#]+)/);
+const surveyRef = m ? m[1] : null;
+const apiBase = surveyRef ? (isPreview ? '/api/surveys/' + surveyRef : '/api/s/' + surveyRef) : null;
 const startAt = Date.now();
 
 let widgets = [];   // [{w, q, visible}]
@@ -18,14 +19,14 @@ let curPage = 0;
 let quiz = null; // {cfg, cur, total, left, timerId, userAnswers}
 
 async function boot() {
-  if (!surveyID) {
+  if (!surveyRef) {
     showError('链接无效');
     return;
   }
   let data;
   if (isPreview) {
     try {
-      const d = await api('/api/surveys/' + surveyID);
+      const d = await api(apiBase);
       data = { survey: { title: d.survey.title, description: d.survey.description, kind: d.survey.kind, quiz_config: d.survey.quiz_config }, questions: d.questions };
     } catch (e) {
       showError(e.message);
@@ -33,7 +34,7 @@ async function boot() {
     }
   } else {
     try {
-      data = await api('/api/surveys/' + surveyID + '/public');
+      data = await api(apiBase);
     } catch (e) {
       showError(e.message);
       return;
@@ -247,7 +248,7 @@ async function submit() {
     btn.textContent = '提交中……';
   }
   try {
-    await api('/api/surveys/' + surveyID + '/responses', {
+    await api(apiBase + '/responses', {
       method: 'POST',
       body: { answers, duration: Math.round((Date.now() - startAt) / 1000) },
     });
@@ -747,7 +748,7 @@ async function submitCurrent() {
     btn.textContent = '提交中……';
   }
   try {
-    const res = await api('/api/surveys/' + surveyID + '/grade-question', {
+    const res = await api(apiBase + '/grade-question', {
       method: 'POST',
       body: { question_id: it.q.id, value: got.value },
     });
@@ -862,7 +863,7 @@ async function submitQuiz(auto) {
     value: p.input.value.trim(),
   }));
   try {
-    const res = await api('/api/surveys/' + surveyID + '/responses', {
+    const res = await api(apiBase + '/responses', {
       method: 'POST',
       body: { answers, profile, duration: Math.round((Date.now() - startAt) / 1000) },
     });
@@ -1010,7 +1011,7 @@ function showQuizResult(res) {
     lb.textContent = '加载中……';
     lb.style.cssText = 'color:var(--text-2);font-size:13px';
     box.appendChild(lb);
-    api('/api/surveys/' + surveyID + '/leaderboard').then((data) => {
+    api(apiBase + '/leaderboard').then((data) => {
       const entries = data.entries || [];
       lb.textContent = '';
       if (entries.length === 0) {
